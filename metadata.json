@@ -1,0 +1,6 @@
+{
+  "name": "PITCHPOT",
+  "description": "Adult cash-prize soccer leagues, split-pay team registration, live standings and brackets, and a player transfer and 4-game loan market.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

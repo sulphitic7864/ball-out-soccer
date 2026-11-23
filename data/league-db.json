@@ -1,0 +1,89 @@
+{
+  "brand": {
+    "siteName": "PITCHPOT",
+    "tagline": "Play for real cash pots. Adult soccer leagues & monthly weekend cash cups.",
+    "aboutText": "PITCHPOT connects competitive and recreational adult soccer squads with verified turf venues, transparent cash prize pools, split-pay team checkout, and fair mid-season transfer & 4-game loan rules.",
+    "rulesSummary": "Mandatory digital liability waiver required before kickoff. Permanent transfers are 1-for-1 swaps only. 4-game loans lock players from playing for their parent club for 4 matches. Playoff rosters require minimum regular-season appearances (anti-ringer rule).",
+    "primaryColor": "#84CC16",
+    "accentColor": "#FBBF24",
+    "bannerEnabled": true,
+    "bannerText": "PRE-SEASON LAUNCH MODE — No active leagues running yet. Open Admin (PIN: 26231) to create your first league & type its venue manually.",
+    "adminPin": "26231"
+  },
+  "cities": [],
+  "venues": [],
+  "leagues": [],
+  "teams": [],
+  "players": [],
+  "matches": [],
+  "transfers": [],
+  "doneDeals": [],
+  "staff": [
+    {
+      "id": "st_founder",
+      "name": "Founder / Super Admin",
+      "email": "founder@pitchpot.io",
+      "role": "Founder / Super Admin",
+      "permissions": [
+        "All Access",
+        "Finance & Payouts",
+        "Edit Site Brand",
+        "Manage Staff"
+      ],
+      "inviteCode": "FOUNDER1",
+      "status": "Active",
+      "createdAt": "2026-11-21T12:20:11.174Z"
+    },
+    {
+      "id": "st_ref",
+      "name": "Head Referee",
+      "email": "ref@pitchpot.io",
+      "role": "Referee / Scorekeeper",
+      "permissions": [
+        "Roster Check-In",
+        "Submit Match Scores",
+        "Issue Cards"
+      ],
+      "inviteCode": "REF2026",
+      "status": "Active",
+      "createdAt": "2026-11-21T12:20:11.174Z"
+    }
+  ],
+  "partners": [],
+  "promoCodes": [
+    {
+      "id": "pr_early50",
+      "code": "EARLY50",
+      "discountAmount": 50,
+      "description": "Early-Bird Pre-Season Team Discount ($50 off)",
+      "active": true,
+      "uses": 0
+    }
+  ],
+  "waitlist": [],
+  "rides": [],
+  "teamMessages": [],
+  "directMessages": [],
+  "rsvps": [],
+  "polls": [],
+  "opponentMessages": [],
+  "mutedPlayerIds": [],
+  "subRequests": [],
+  "motmVotes": [],
+  "championsCup": {
+    "id": "cup_coed_2026",
+    "name": "Co-Ed Champion of Champions Super Cup",
+    "seasonLabel": "Inaugural Season",
+    "enabled": true,
+    "linkedLeagueIds": [],
+    "bonusPrizeText": "$1,500 Bonus Cash Pot + Free Next Season Entry",
+    "minFemaleOnField": 2,
+    "enforceGenderRatio": true,
+    "lockRostersToRegularSeason": true,
+    "minRegularSeasonGames": 2,
+    "matches": []
+  },
+  "teamInvites": [],
+  "freeAgentInvites": [],
+  "schemaVersion": 4
+}

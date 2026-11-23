@@ -1,0 +1,283 @@
+import { useEffect, useState } from 'react';
+import type { LeagueDatabase } from './types.ts';
+import { TopBar, MobileBottomBar, type AppTab } from './components/TopBar.tsx';
+import { LeagueDirectory } from './components/LeagueDirectory.tsx';
+import { LiveLeagueHub } from './components/LiveLeagueHub.tsx';
+import { TransferMarket } from './components/TransferMarket.tsx';
+import { Clubhouse } from './components/Clubhouse.tsx';
+import { AdminRefDashboard } from './components/AdminRefDashboard.tsx';
+import { RegistrationModal } from './components/RegistrationModal.tsx';
+
+export default function App() {
+  const [db, setDb] = useState<LeagueDatabase | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+
+  const [activeTab, setActiveTab] = useState<AppTab>('leagues');
+  const [marketSubTab, setMarketSubTab] = useState<'board' | 'requests' | 'subs' | 'deals'>('board');
+  const [selectedLeagueId, setSelectedLeagueId] = useState<string>('');
+  const [selectedTeamId, setSelectedTeamId] = useState<string>('');
+  const [activePlayerId, setActivePlayerId] = useState<string>('');
+
+  const [regModalOpen, setRegModalOpen] = useState(false);
+  const [regLeagueId, setRegLeagueId] = useState<string>('');
+  const [regMode, setRegMode] = useState<'team' | 'split' | 'solo' | 'waitlist'>('team');
+  const [regSplitCode, setRegSplitCode] = useState<string>('');
+
+  const syncSelections = (data: LeagueDatabase) => {
+    setSelectedLeagueId((prev) =>
+      prev && data.leagues.some((l) => l.id === prev) ? prev : data.leagues[0]?.id || ''
+    );
+    setSelectedTeamId((prev) =>
+      prev && data.teams.some((t) => t.id === prev) ? prev : data.teams[0]?.id || ''
+    );
+    setActivePlayerId((prev) =>
+      prev && data.players.some((p) => p.id === prev) ? prev : data.players[0]?.id || ''
+    );
+  };
+
+  const handleDatabaseUpdate = (nextDb: LeagueDatabase) => {
+    setDb(nextDb);
+    syncSelections(nextDb);
+  };
+
+  const fetchState = async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const res = await fetch('/api/state');
+      if (!res.ok) throw new Error('Failed to load league platform data');
+      const data: LeagueDatabase = await res.json();
+      setDb(data);
+      syncSelections(data);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Network error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchState();
+    if (window.location.pathname === '/admin') {
+      setActiveTab('admin');
+    }
+    const params = new URLSearchParams(window.location.search);
+    const joinCode = params.get('join');
+    if (joinCode) {
+      setRegMode('split');
+      setRegSplitCode(joinCode.toUpperCase());
+      setRegModalOpen(true);
+    }
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#090D12] text-slate-100">
+        <div className="h-16 border-b border-white/10 bg-[#090D12]" />
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 py-10 space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div className="lg:col-span-6 h-80 rounded-2xl bg-[#111821] animate-pulse" />
+            <div className="lg:col-span-6 h-80 rounded-2xl bg-[#111821] animate-pulse" />
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="h-24 rounded-xl bg-[#111821] animate-pulse" />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (loadError || !db) {
+    return (
+      <div className="min-h-screen bg-[#090D12] text-slate-100 flex items-center justify-center p-6">
+        <div className="max-w-md w-full rounded-2xl border border-white/10 bg-[#111821] p-6 text-center space-y-4">
+          <h1 className="font-display text-2xl font-bold text-white">
+            Unable to Connect to League Server
+          </h1>
+          <p className="text-sm text-slate-400">{loadError || 'Unexpected server response.'}</p>
+          <button
+            type="button"
+            onClick={fetchState}
+            className="min-h-[42px] rounded-lg bg-emerald-500 px-5 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 cursor-pointer"
+          >
+            Retry Connection
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#090D12] text-slate-100 flex flex-col">
+      <TopBar
+        brand={db.brand}
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        onOpenRegister={() => {
+          setRegLeagueId(selectedLeagueId || db.leagues[0]?.id || '');
+          setRegMode('team');
+          setRegSplitCode('');
+          setRegModalOpen(true);
+        }}
+      />
+
+      <main className="flex-1">
+        {activeTab === 'leagues' && (
+          <LeagueDirectory
+            db={db}
+            onRegisterLeague={(leagueId, mode = 'team') => {
+              setRegLeagueId(leagueId);
+              setRegMode(mode);
+              setRegSplitCode('');
+              setRegModalOpen(true);
+            }}
+            onOpenHub={(leagueId) => {
+              setSelectedLeagueId(leagueId);
+              setActiveTab('hub');
+            }}
+            onOpenMarket={() => {
+              setMarketSubTab('board');
+              setActiveTab('market');
+            }}
+            onOpenAdmin={() => setActiveTab('admin')}
+            onDatabaseUpdate={handleDatabaseUpdate}
+          />
+        )}
+
+        {activeTab === 'hub' && (
+          <LiveLeagueHub
+            db={db}
+            selectedLeagueId={selectedLeagueId}
+            onSelectLeague={setSelectedLeagueId}
+            onOpenMarket={() => {
+              setMarketSubTab('board');
+              setActiveTab('market');
+            }}
+            onOpenAdmin={() => setActiveTab('admin')}
+            onOpenClubhouse={(teamId, playerId) => {
+              setSelectedTeamId(teamId);
+              if (playerId) setActivePlayerId(playerId);
+              setActiveTab('clubhouse');
+            }}
+            onOpenRegister={(leagueId, mode = 'team', splitCode = '') => {
+              setRegLeagueId(leagueId);
+              setRegMode(mode);
+              setRegSplitCode(splitCode);
+              setRegModalOpen(true);
+            }}
+            onDatabaseUpdate={handleDatabaseUpdate}
+          />
+        )}
+
+        {activeTab === 'market' && (
+          <TransferMarket
+            db={db}
+            selectedLeagueId={selectedLeagueId}
+            onSelectLeague={setSelectedLeagueId}
+            activePlayerId={activePlayerId}
+            onSelectActivePlayer={setActivePlayerId}
+            initialSubTab={marketSubTab}
+            onOpenAdmin={() => setActiveTab('admin')}
+            onDatabaseUpdate={handleDatabaseUpdate}
+          />
+        )}
+
+        {activeTab === 'clubhouse' && (
+          <Clubhouse
+            db={db}
+            selectedTeamId={selectedTeamId}
+            onSelectTeam={setSelectedTeamId}
+            activePlayerId={activePlayerId}
+            onSelectActivePlayer={setActivePlayerId}
+            onOpenSplitJoin={(code) => {
+              setRegMode('split');
+              setRegSplitCode(code);
+              setRegModalOpen(true);
+            }}
+            onOpenRegister={(leagueId, mode = 'team', splitCode = '') => {
+              setRegLeagueId(leagueId);
+              setRegMode(mode);
+              setRegSplitCode(splitCode);
+              setRegModalOpen(true);
+            }}
+            onGoToMarket={(tab = 'board', leagueId, playerId) => {
+              if (leagueId) setSelectedLeagueId(leagueId);
+              if (playerId) setActivePlayerId(playerId);
+              setMarketSubTab(tab);
+              setActiveTab('market');
+            }}
+            onOpenAdmin={() => setActiveTab('admin')}
+            onDatabaseUpdate={handleDatabaseUpdate}
+          />
+        )}
+
+        {activeTab === 'admin' && (
+          <AdminRefDashboard db={db} onDatabaseUpdate={handleDatabaseUpdate} />
+        )}
+      </main>
+
+      <footer className="border-t border-white/10 bg-[#090D12] py-6 pb-20 md:pb-6">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+          <div>{db.brand.siteName} Adult Cash-Prize Soccer Leagues & Super Cups</div>
+          <div className="flex flex-wrap items-center gap-4">
+            <button
+              type="button"
+              onClick={() => setActiveTab('leagues')}
+              className="hover:text-slate-300 cursor-pointer"
+            >
+              Leagues
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('clubhouse')}
+              className="hover:text-slate-300 cursor-pointer"
+            >
+              Clubhouse & Ride Hub
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMarketSubTab('board');
+                setActiveTab('market');
+              }}
+              className="hover:text-slate-300 cursor-pointer"
+            >
+              Market & Subs
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('admin')}
+              className="text-slate-600 hover:text-slate-300 cursor-pointer"
+              title="Staff & Founder Console"
+            >
+              Admin Login
+            </button>
+          </div>
+        </div>
+      </footer>
+
+      <MobileBottomBar brand={db.brand} activeTab={activeTab} onSelectTab={setActiveTab} />
+
+      <RegistrationModal
+        isOpen={regModalOpen}
+        onClose={() => setRegModalOpen(false)}
+        db={db}
+        initialLeagueId={regLeagueId}
+        initialMode={regMode}
+        initialSplitCode={regSplitCode}
+        onOpenAdmin={() => {
+          setRegModalOpen(false);
+          setActiveTab('admin');
+        }}
+        onDatabaseUpdate={handleDatabaseUpdate}
+        onGoToClubhouse={(teamId) => {
+          setSelectedTeamId(teamId);
+          setActiveTab('clubhouse');
+        }}
+      />
+    </div>
+  );
+}
