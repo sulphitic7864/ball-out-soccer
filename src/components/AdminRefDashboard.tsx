@@ -24,6 +24,7 @@ import {
   Trash2,
   MapPin,
   Save,
+  ExternalLink,
 } from 'lucide-react';
 import type {
   League,
@@ -68,6 +69,36 @@ export const AdminRefDashboard: React.FC<AdminRefDashboardProps> = ({
   >('referee');
   const [busy, setBusy] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
+  const navigationGroups = [
+    {
+      label: 'League Operations',
+      items: [
+        { id: 'leagues' as const, label: 'Leagues & Profit', icon: <Calculator className="h-4 w-4" />, adminOnly: true, badge: db.leagues.length },
+        { id: 'supercup' as const, label: 'Co-Ed Super Cup', icon: <GitBranch className="h-4 w-4" />, adminOnly: true },
+        { id: 'referee' as const, label: 'Ref Scorekeeper', icon: <ShieldCheck className="h-4 w-4" />, adminOnly: false },
+      ],
+    },
+    {
+      label: 'Organization',
+      items: [
+        { id: 'venues' as const, label: 'Cities & Fields', icon: <MapPin className="h-4 w-4" />, adminOnly: true, badge: db.venues.length },
+        { id: 'staff' as const, label: 'Staff & Partners', icon: <Handshake className="h-4 w-4" />, adminOnly: true },
+      ],
+    },
+    {
+      label: 'Finance & Growth',
+      items: [
+        { id: 'payments' as const, label: 'Fee Ledger', icon: <DollarSign className="h-4 w-4" />, adminOnly: true },
+        { id: 'ops' as const, label: 'Promos & Suspensions', icon: <Megaphone className="h-4 w-4" />, adminOnly: true },
+        { id: 'customizer' as const, label: 'Brand Customizer', icon: <Palette className="h-4 w-4" />, adminOnly: true },
+      ],
+    },
+  ]
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !item.adminOnly || authRole === 'admin'),
+    }))
+    .filter((group) => group.items.length > 0);
 
   // Champions Cup Local Controls
   const [cupName, setCupName] = useState(db.championsCup.name);
@@ -262,6 +293,13 @@ export const AdminRefDashboard: React.FC<AdminRefDashboardProps> = ({
               </button>
             </div>
           </div>
+          <a
+            href="/"
+            className="inline-flex items-center gap-2 text-xs font-semibold text-slate-400 hover:text-white"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            Return to public website
+          </a>
         </div>
       </div>
     );
@@ -467,14 +505,15 @@ export const AdminRefDashboard: React.FC<AdminRefDashboardProps> = ({
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-4 sm:px-6 py-8 pb-24 space-y-6">
+    <div className="min-h-screen">
+      <div className="mx-auto max-w-[1600px] px-4 sm:px-6 py-6 pb-24 space-y-6 lg:mx-0 lg:ml-[270px]">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-5">
         <div>
-          <div className="text-xs font-medium text-emerald-400">
-            {authRole === 'admin' ? `Super-Admin Panel (PIN: ${db.brand.adminPin})` : 'Pitchside Referee Console'}
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-400">
+            {authRole === 'admin' ? `Administration · ${db.brand.siteName}` : 'Match Operations'}
           </div>
           <h1 className="font-display text-3xl sm:text-4xl font-bold text-white mt-0.5">
-            {authRole === 'admin' ? 'Change Anything Control Center' : 'Mobile Ref Scorekeeper'}
+            {authRole === 'admin' ? 'Management Console' : 'Referee Console'}
           </h1>
         </div>
 
@@ -522,40 +561,83 @@ export const AdminRefDashboard: React.FC<AdminRefDashboardProps> = ({
         </div>
       </div>
 
-      {/* Navigation */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1">
-        {[
-          { id: 'referee' as const, label: 'Ref Scorekeeper', adminOnly: false },
-          { id: 'leagues' as const, label: 'Leagues & Profit Calc', adminOnly: true },
-          { id: 'supercup' as const, label: 'Co-Ed Super Cup', adminOnly: true },
-          { id: 'customizer' as const, label: 'Brand Customizer', adminOnly: true },
-          { id: 'staff' as const, label: 'Staff & Partners', adminOnly: true },
-          { id: 'ops' as const, label: 'Promos, Blasts & Suspensions', adminOnly: true },
-          { id: 'venues' as const, label: 'Cities & Fields Manager', adminOnly: true },
-          { id: 'payments' as const, label: 'Fee Ledger (Player Teams)', adminOnly: true },
-        ]
-          .filter((t) => !t.adminOnly || authRole === 'admin')
-          .map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setSection(t.id)}
-              className={`min-h-[40px] rounded-lg px-3.5 py-2 text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer ${
-                section === t.id
-                  ? 'bg-emerald-500 text-slate-950'
-                  : 'border border-white/10 bg-[#111821] text-slate-300 hover:text-white'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-      </div>
+      <aside className="admin-sidebar-scroll mb-6 max-h-[55vh] overflow-y-auto overscroll-contain rounded-2xl border border-white/10 bg-gradient-to-b from-[#111821] to-[#0D131A] p-4 lg:fixed lg:inset-y-0 lg:left-0 lg:z-40 lg:mb-0 lg:h-screen lg:max-h-none lg:w-[270px] lg:rounded-none lg:border-y-0 lg:border-l-0">
+          <div className="flex items-center gap-3 border-b border-white/10 px-1 pb-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-400/20 bg-emerald-500/10 text-emerald-300">
+              <ShieldCheck className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="truncate text-sm font-bold text-white">{db.brand.siteName}</div>
+              <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                Admin workspace
+              </div>
+            </div>
+          </div>
 
-      {statusMsg && (
-        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-300">
-          {statusMsg}
-        </div>
-      )}
+          <nav className="mt-5 space-y-5" aria-label="Admin sections">
+            {navigationGroups.map((group) => (
+              <div key={group.label}>
+                <h2 className="mb-2 px-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
+                  {group.label}
+                </h2>
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-1">
+                  {group.items.map((item) => {
+                    const isActive = section === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        aria-current={isActive ? 'page' : undefined}
+                        onClick={() => setSection(item.id)}
+                        className={`relative flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-xs font-semibold transition-colors cursor-pointer ${
+                          isActive
+                            ? 'border border-emerald-400/20 bg-emerald-500/10 text-emerald-200'
+                            : 'border border-transparent text-slate-400 hover:border-white/10 hover:bg-white/5 hover:text-white'
+                        }`}
+                      >
+                        {isActive && <span className="absolute inset-y-2 left-0 w-1 rounded-full bg-emerald-400" />}
+                        <span
+                          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                            isActive ? 'bg-emerald-500/15 text-emerald-300' : 'bg-white/5 text-slate-400'
+                          }`}
+                        >
+                          {item.icon}
+                        </span>
+                        <span className="min-w-0 flex-1">{item.label}</span>
+                        {'badge' in item && item.badge !== undefined && (
+                          <span className="rounded-md bg-white/5 px-1.5 py-0.5 text-[10px] font-mono-num text-slate-400">
+                            {item.badge}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </nav>
+
+          <div className="mt-5 border-t border-white/10 px-2 pt-4">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              Signed in as
+            </div>
+            <div className="mt-1 text-xs font-semibold capitalize text-slate-300">{authRole}</div>
+          </div>
+          <a
+            href="/"
+            className="mt-4 flex min-h-10 items-center gap-2 rounded-xl border border-white/10 px-3 text-xs font-semibold text-slate-400 transition-colors hover:bg-white/5 hover:text-white"
+          >
+            <ExternalLink className="h-4 w-4" />
+            View public website
+          </a>
+      </aside>
+
+        <div className="min-w-0 space-y-6">
+          {statusMsg && (
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-300">
+              {statusMsg}
+            </div>
+          )}
 
       {/* 1. MOBILE REFEREE SCOREKEEPER */}
       {section === 'referee' && (
@@ -3200,6 +3282,8 @@ export const AdminRefDashboard: React.FC<AdminRefDashboardProps> = ({
           )}
         </div>
       )}
+        </div>
+      </div>
     </div>
   );
 };

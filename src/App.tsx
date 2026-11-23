@@ -125,26 +125,28 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#090D12] text-slate-100 flex flex-col">
-      <TopBar
-        brand={db.brand}
-        activeTab={activeTab}
-        selectedLeagueType={selectedLeagueType}
-        onSelectTab={navigateToTab}
-        onSelectLeagueType={setSelectedLeagueType}
-        onNavigateToPartnerships={() => {
-          navigateToTab('leagues');
-          window.setTimeout(
-            () => document.getElementById('partnerships')?.scrollIntoView({ behavior: 'smooth' }),
-            0
-          );
-        }}
-        onOpenRegister={() => {
-          setRegLeagueId(selectedLeagueId || db.leagues[0]?.id || '');
-          setRegMode('team');
-          setRegSplitCode('');
-          setRegModalOpen(true);
-        }}
-      />
+      {activeTab !== 'admin' && (
+        <TopBar
+          brand={db.brand}
+          activeTab={activeTab}
+          selectedLeagueType={selectedLeagueType}
+          onSelectTab={navigateToTab}
+          onSelectLeagueType={setSelectedLeagueType}
+          onNavigateToPartnerships={() => {
+            navigateToTab('leagues');
+            window.setTimeout(
+              () => document.getElementById('partnerships')?.scrollIntoView({ behavior: 'smooth' }),
+              0
+            );
+          }}
+          onOpenRegister={() => {
+            setRegLeagueId(selectedLeagueId || db.leagues[0]?.id || '');
+            setRegMode('team');
+            setRegSplitCode('');
+            setRegModalOpen(true);
+          }}
+        />
+      )}
 
       <main className="flex-1">
         {activeTab === 'leagues' && (
@@ -238,39 +240,43 @@ export default function App() {
         )}
       </main>
 
-      <footer className="border-t border-white/10 bg-[#090D12] py-6 pb-20 lg:pb-6">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
-          <div>{db.brand.siteName} · Leagues, tournaments & player community</div>
-          <div className="flex flex-wrap items-center gap-4">
-            <button
-              type="button"
-              onClick={() => setActiveTab('leagues')}
-              className="hover:text-slate-300 cursor-pointer"
-            >
-              Leagues
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('clubhouse')}
-              className="hover:text-slate-300 cursor-pointer"
-            >
-              Clubhouse & Ride Hub
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMarketSubTab('board');
-                setActiveTab('market');
-              }}
-              className="hover:text-slate-300 cursor-pointer"
-            >
-              Market & Subs
-            </button>
+      {activeTab !== 'admin' && (
+        <footer className="border-t border-white/10 bg-[#090D12] py-6 pb-20 lg:pb-6">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+            <div>{db.brand.siteName} · Leagues, tournaments & player community</div>
+            <div className="flex flex-wrap items-center gap-4">
+              <button
+                type="button"
+                onClick={() => navigateToTab('leagues')}
+                className="hover:text-slate-300 cursor-pointer"
+              >
+                Leagues
+              </button>
+              <button
+                type="button"
+                onClick={() => navigateToTab('clubhouse')}
+                className="hover:text-slate-300 cursor-pointer"
+              >
+                Clubhouse & Ride Hub
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMarketSubTab('board');
+                  navigateToTab('market');
+                }}
+                className="hover:text-slate-300 cursor-pointer"
+              >
+                Market & Subs
+              </button>
+            </div>
           </div>
-        </div>
-      </footer>
+        </footer>
+      )}
 
-      <MobileBottomBar brand={db.brand} activeTab={activeTab} onSelectTab={navigateToTab} />
+      {activeTab !== 'admin' && (
+        <MobileBottomBar brand={db.brand} activeTab={activeTab} onSelectTab={navigateToTab} />
+      )}
 
       <RegistrationModal
         isOpen={regModalOpen}
