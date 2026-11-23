@@ -562,7 +562,7 @@ export const PlayerCardModal: React.FC<PlayerCardModalProps> = ({
 
     ctx.fillStyle = '#F59E0B';
     ctx.font = 'bold 26px sans-serif';
-    ctx.fillText(`PITCHPOT ${stats.tier.toUpperCase()} CARD`, 110, 1130);
+    ctx.fillText(`BALL OUT SOCCER ${stats.tier.toUpperCase()} CARD`, 110, 1130);
 
     const a = document.createElement('a');
     a.href = canvas.toDataURL('image/png');

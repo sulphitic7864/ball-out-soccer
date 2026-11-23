@@ -49,17 +49,16 @@ function uid(prefix: string): string {
 
 function createSeedDatabase(): LeagueDatabase {
   const brand: BrandConfig = {
-    siteName: 'PITCHPOT',
-    tagline: 'Play for real cash pots. Adult soccer leagues & monthly weekend cash cups.',
+    siteName: 'Ball Out Soccer',
+    tagline: 'Find your team. Play your game. Ball out.',
     aboutText:
-      'PITCHPOT connects competitive and recreational adult soccer squads with verified turf venues, transparent cash prize pools, split-pay team checkout, and fair mid-season transfer & 4-game loan rules.',
+      'Adult soccer leagues and tournaments for every level. Find your next game, bring your squad, and follow every fixture, table, and result in one place.',
     rulesSummary:
       'Mandatory digital liability waiver required before kickoff. Permanent transfers are 1-for-1 swaps only. 4-game loans lock players from playing for their parent club for 4 matches. Playoff rosters require minimum regular-season appearances (anti-ringer rule).',
     primaryColor: '#10B981',
     accentColor: '#F59E0B',
     bannerEnabled: true,
-    bannerText:
-      'PRE-SEASON LAUNCH MODE — No active leagues running yet. Open Admin (PIN: 26231) to create your first league & type its venue manually.',
+    bannerText: 'Your next season starts here — find a league, bring your team, and get ready to play.',
     adminPin: '26231',
   };
 
@@ -2705,7 +2704,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`PITCHPOT server running at http://localhost:${PORT}`);
+    console.log(`Ball Out Soccer server running at http://localhost:${PORT}`);
   });
 }
 

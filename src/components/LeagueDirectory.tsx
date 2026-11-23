@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Trophy,
   MapPin,
@@ -10,7 +10,11 @@ import {
   ExternalLink,
   GitBranch,
   ShieldCheck,
+  UserRound,
+  Users,
+  UsersRound,
 } from 'lucide-react';
+import heroImage from '../assets/images/hero_floodlit_pitch_1795345163452.jpg';
 import type { League, LeagueDatabase, LeagueType, Partner } from '../types.ts';
 import {
   calculateSeasonDurationLabel,
@@ -21,22 +25,22 @@ import {
 
 interface LeagueDirectoryProps {
   db: LeagueDatabase;
+  selectedLeagueType: 'All' | 'League' | 'Tournament';
+  onSelectLeagueType: (type: 'All' | 'League' | 'Tournament') => void;
   onRegisterLeague: (leagueId: string, mode?: 'team' | 'split' | 'solo' | 'waitlist') => void;
   onOpenHub: (leagueId: string) => void;
-  onOpenMarket: () => void;
-  onOpenAdmin?: () => void;
   onDatabaseUpdate: (db: LeagueDatabase) => void;
 }
 
 export const LeagueDirectory: React.FC<LeagueDirectoryProps> = ({
   db,
+  selectedLeagueType,
+  onSelectLeagueType,
   onRegisterLeague,
   onOpenHub,
-  onOpenMarket,
-  onOpenAdmin,
   onDatabaseUpdate,
 }) => {
-  const [typeFilter, setTypeFilter] = useState<'All' | LeagueType>('All');
+  const [typeFilter, setTypeFilter] = useState<'All' | LeagueType>(selectedLeagueType);
   const [cityFilter, setCityFilter] = useState<string>('All');
   const [venueFilter, setVenueFilter] = useState<string>('All');
   const [dayFilter, setDayFilter] = useState<string>('All');
@@ -59,6 +63,11 @@ export const LeagueDirectory: React.FC<LeagueDirectoryProps> = ({
     db.leagues.forEach((l) => l.city && set.add(l.city));
     return ['All', ...Array.from(set)];
   }, [db.cities, db.venues, db.leagues]);
+  const availableCities = cityOptions.filter((city) => city !== 'All');
+
+  useEffect(() => {
+    setTypeFilter(selectedLeagueType);
+  }, [selectedLeagueType]);
 
   const venueOptions = useMemo(() => {
     const list = db.venues.filter((v) => cityFilter === 'All' || v.city === cityFilter);
@@ -94,6 +103,7 @@ export const LeagueDirectory: React.FC<LeagueDirectoryProps> = ({
 
   const resetFilters = () => {
     setTypeFilter('All');
+    onSelectLeagueType('All');
     setCityFilter('All');
     setVenueFilter('All');
     setDayFilter('All');
@@ -144,125 +154,76 @@ export const LeagueDirectory: React.FC<LeagueDirectoryProps> = ({
     <div className="space-y-12 pb-20">
       {/* Site-Wide Pre-Season / Testing Banner */}
       {db.brand.bannerEnabled && (
-        <div className="border-b border-amber-400/25 bg-amber-400/10 px-4 py-2.5">
+        <div className="border-b border-white/10 bg-[#111821] px-4 py-2.5">
           <div className="mx-auto max-w-7xl flex flex-col sm:flex-row items-center justify-between gap-2 text-xs">
-            <span className="font-medium text-amber-200 text-center sm:text-left">
+            <span className="font-medium text-slate-200 text-center sm:text-left">
               {db.brand.bannerText}
             </span>
             <button
               type="button"
               onClick={() => onRegisterLeague(db.leagues[0]?.id || '', 'waitlist')}
-              className="shrink-0 font-semibold text-amber-300 underline hover:text-amber-200 cursor-pointer"
+              className="shrink-0 font-semibold underline hover:opacity-80 cursor-pointer"
+              style={{ color: db.brand.primaryColor }}
             >
-              Reserve Early-Bird Spot →
+              Join the waitlist <span aria-hidden="true">→</span>
             </button>
           </div>
         </div>
       )}
 
-      {/* Hero Split */}
-      <section className="mx-auto max-w-7xl px-4 sm:px-6 pt-6 sm:pt-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-stretch">
-          <div className="lg:col-span-6 flex flex-col justify-between rounded-2xl border border-white/10 bg-[#111821] p-6 sm:p-10">
-            <div className="space-y-5">
-              <div className="inline-flex items-center gap-2 rounded-md border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-300">
-                <Trophy className="h-3.5 w-3.5 text-amber-400" />
-                <span>Real Cash-Prize Adult Soccer & Monthly Cups</span>
+      <section className="mx-auto max-w-7xl px-4 sm:px-6 pt-5">
+        <div className="relative min-h-[440px] sm:min-h-[540px] overflow-hidden rounded-2xl border border-white/10 bg-[#111821]">
+          {!imgErrors.hero ? (
+            <img
+              src={heroImage}
+              alt="Adult soccer match under stadium floodlights"
+              onError={() => setImgErrors((prev) => ({ ...prev, hero: true }))}
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+          ) : (
+            <div className="absolute inset-0 bg-gradient-to-br from-emerald-950 via-[#111821] to-[#090D12]" />
+          )}
+          <div className="absolute inset-0 bg-gradient-to-r from-[#090D12]/90 via-[#090D12]/50 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#090D12]/75 via-transparent to-transparent" />
+          <div className="relative flex min-h-[440px] sm:min-h-[540px] items-end px-6 py-8 sm:px-10 sm:py-12">
+            <div className="max-w-3xl">
+              <div className="mb-4 inline-flex items-center gap-2 rounded-md border border-white/20 bg-[#090D12]/65 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur">
+                <Trophy className="h-4 w-4" style={{ color: db.brand.primaryColor }} />
+                <span>Adult leagues · Tournaments · Community</span>
               </div>
-
               <h1
-                className="font-display text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-white leading-[1.02]"
+                className="font-display text-5xl sm:text-7xl lg:text-8xl font-extrabold tracking-tight leading-[0.9] text-white"
                 style={{ textWrap: 'balance' }}
               >
                 {db.brand.tagline}
               </h1>
-
-              <p className="text-base text-slate-300 leading-relaxed max-w-xl">
+              <p className="mt-5 max-w-2xl text-sm sm:text-base leading-relaxed text-slate-200">
                 {db.brand.aboutText}
               </p>
-            </div>
-
-            <div className="mt-8 flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={() => onRegisterLeague(db.leagues[0]?.id || '', 'team')}
-                style={{ backgroundColor: db.brand.primaryColor }}
-                className="min-h-[46px] rounded-lg px-5 py-2.5 text-sm font-semibold text-slate-950 hover:opacity-90 transition-opacity cursor-pointer"
-              >
-                Register Team ($2,500) / Solo ($250)
-              </button>
-              <button
-                type="button"
-                onClick={() => onRegisterLeague(db.leagues[0]?.id || '', 'waitlist')}
-                className="min-h-[46px] rounded-lg border border-white/15 bg-white/5 px-5 py-2.5 text-sm font-semibold text-white hover:bg-white/10 transition-colors cursor-pointer"
-              >
-                Join Early-Bird Waitlist
-              </button>
-              <button
-                type="button"
-                onClick={onOpenMarket}
-                className="min-h-[46px] inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer"
-              >
-                <span>Market & Subs</span>
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-
-          <div className="lg:col-span-6 relative min-h-[280px] sm:min-h-[360px] overflow-hidden rounded-2xl border border-white/10 bg-[#111821]">
-            {!imgErrors['hero'] ? (
-              <img
-                src="/src/assets/images/hero_floodlit_pitch_1795345163452.jpg"
-                alt="Adult 7v7 soccer match under stadium floodlights at night"
-                referrerPolicy="no-referrer"
-                onError={() => setImgErrors((prev) => ({ ...prev, hero: true }))}
-                className="h-full w-full object-cover lg:h-full"
-              />
-            ) : (
-              <div className="h-full w-full bg-gradient-to-br from-emerald-950 via-[#111821] to-[#090D12] flex items-center justify-center">
-                <Trophy className="h-16 w-16 text-amber-400/50" />
-              </div>
-            )}
-            <div className="absolute inset-0 bg-gradient-to-t from-[#090D12]/95 via-[#090D12]/40 to-transparent" />
-            <div className="absolute bottom-0 left-0 right-0 p-6 sm:p-8 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-              <div>
-                <div className="text-xs font-medium text-amber-300">
-                  Pre-Season & Live Divisions
-                </div>
-                <div className="font-display text-2xl sm:text-3xl font-bold text-white mt-0.5">
-                  $500 – $1,500+ Cash Pots
-                </div>
-                <div className="text-xs text-slate-300 mt-1">
-                  1x/Wk Full Seasons · 2x/Wk Fast-Track · 1-Day Monthly Cups
-                </div>
-              </div>
-              {db.leagues.length > 0 ? (
+              <div className="mt-6 flex flex-wrap gap-3">
                 <button
                   type="button"
-                  onClick={() => onOpenHub(db.leagues[0].id)}
-                  className="min-h-[42px] shrink-0 rounded-lg bg-white/15 backdrop-blur-md border border-white/20 px-4 py-2 text-xs font-semibold text-white hover:bg-white/25 transition-colors cursor-pointer"
+                  onClick={() => document.getElementById('programs')?.scrollIntoView({ behavior: 'smooth' })}
+                  style={{ backgroundColor: db.brand.primaryColor }}
+                  className="min-h-[46px] rounded-lg px-5 py-2.5 text-sm font-bold text-slate-950 hover:opacity-90 transition-opacity cursor-pointer"
                 >
-                  Preview 0-0-0 Standings
+                  Find a League
                 </button>
-              ) : (
-                onOpenAdmin && (
-                  <button
-                    type="button"
-                    onClick={onOpenAdmin}
-                    className="min-h-[42px] shrink-0 rounded-lg bg-white/15 backdrop-blur-md border border-white/20 px-4 py-2 text-xs font-semibold text-white hover:bg-white/25 transition-colors cursor-pointer"
-                  >
-                    Create First League (Admin)
-                  </button>
-                )
-              )}
+                <button
+                  type="button"
+                  onClick={() => onRegisterLeague(db.leagues[0]?.id || '', 'team')}
+                  className="min-h-[46px] rounded-lg border border-white/25 bg-[#090D12]/60 px-5 py-2.5 text-sm font-semibold text-white backdrop-blur hover:bg-[#090D12]/80 transition-colors cursor-pointer"
+                >
+                  Register Your Team
+                </button>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* 4-column KPI Strip */}
-        <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="mt-4 grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           <div className="rounded-xl border border-white/10 bg-[#111821] px-5 py-4">
-            <div className="text-xs text-slate-400">Leagues & Monthly Cups</div>
+            <div className="text-xs text-slate-400">Leagues & Tournaments</div>
             <div className="font-mono-num text-2xl font-bold text-white mt-1">
               {db.leagues.length}
             </div>
@@ -285,6 +246,117 @@ export const LeagueDirectory: React.FC<LeagueDirectoryProps> = ({
               {db.subRequests.filter((s) => s.status === 'Open').length} / {db.rides.length}
             </div>
           </div>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-4 sm:px-6 space-y-6">
+        <div className="max-w-2xl">
+          <div className="text-xs font-bold uppercase tracking-[0.18em]" style={{ color: db.brand.primaryColor }}>
+            Everyone has a place on the pitch
+          </div>
+          <h2 className="mt-2 font-display text-3xl sm:text-4xl font-bold text-white">
+            Bring your squad. Or find your people.
+          </h2>
+          <p className="mt-2 text-sm text-slate-400">
+            Join the way that works for you. Follow your league, team, fixtures, and standings all season long.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[
+            {
+              title: 'Free Agent',
+              description: 'New to the area or just looking for a team? Register solo and get in the game.',
+              icon: <UserRound className="h-5 w-5" />,
+              mode: 'solo' as const,
+              action: 'Join as a Free Agent',
+            },
+            {
+              title: 'Play with a Friend',
+              description: 'Sign up as a player and invite a friend to join you in the same league.',
+              icon: <UsersRound className="h-5 w-5" />,
+              mode: 'solo' as const,
+              action: 'Find a League Together',
+            },
+            {
+              title: 'Full Team',
+              description: 'Already have a squad? Register your team and start your season together.',
+              icon: <Users className="h-5 w-5" />,
+              mode: 'team' as const,
+              action: 'Register Your Team',
+            },
+          ].map((option) => (
+            <article key={option.title} className="rounded-2xl border border-white/10 bg-[#111821] p-6 sm:p-7">
+              <div
+                className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10"
+                style={{ color: db.brand.primaryColor, backgroundColor: `${db.brand.primaryColor}12` }}
+              >
+                {option.icon}
+              </div>
+              <h3 className="mt-4 font-display text-2xl font-bold text-white">{option.title}</h3>
+              <p className="mt-2 min-h-12 text-sm leading-relaxed text-slate-400">{option.description}</p>
+              <button
+                type="button"
+                onClick={() => onRegisterLeague(db.leagues[0]?.id || '', option.mode)}
+                className="mt-5 inline-flex min-h-[42px] items-center gap-2 text-sm font-semibold hover:opacity-80 cursor-pointer"
+                style={{ color: db.brand.primaryColor }}
+              >
+                {option.action}
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-4 sm:px-6">
+        <div className="rounded-2xl border border-white/10 bg-[#111821] p-6 sm:p-8">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: db.brand.primaryColor }}>
+                <MapPin className="h-4 w-4" />
+                Where we play
+              </div>
+              <h2 className="mt-2 font-display text-3xl sm:text-4xl font-bold text-white">
+                Find a game near you
+              </h2>
+              <p className="mt-2 max-w-xl text-sm text-slate-400">
+                Browse soccer leagues by city, then explore each league’s teams, fixtures, and standings.
+              </p>
+            </div>
+            {availableCities.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {availableCities.slice(0, 8).map((city) => (
+                  <button
+                    key={city}
+                    type="button"
+                    onClick={() => {
+                      setCityFilter(city);
+                      document.getElementById('programs')?.scrollIntoView({ behavior: 'smooth' });
+                    }}
+                    className="min-h-[38px] rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-200 hover:border-white/30 hover:bg-white/10 cursor-pointer"
+                  >
+                    {city}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {availableCities.length === 0 && (
+            <div className="mt-5 flex flex-col gap-3 rounded-xl border border-white/10 bg-[#090D12]/60 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-slate-400">
+                New league locations will appear here as seasons are added.
+              </p>
+              <button
+                type="button"
+                onClick={() => document.getElementById('programs')?.scrollIntoView({ behavior: 'smooth' })}
+                className="inline-flex min-h-[40px] items-center gap-2 text-sm font-semibold hover:opacity-80 cursor-pointer"
+                style={{ color: db.brand.primaryColor }}
+              >
+                Explore programs
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+          )}
         </div>
       </section>
 
@@ -500,14 +572,14 @@ export const LeagueDirectory: React.FC<LeagueDirectoryProps> = ({
       )}
 
       {/* Filterable League & Tournament Directory */}
-      <section className="mx-auto max-w-7xl px-4 sm:px-6 space-y-6">
+      <section id="programs" className="mx-auto max-w-7xl px-4 sm:px-6 space-y-6 scroll-mt-24">
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-white/10 pb-4">
           <div>
             <h2 className="font-display text-3xl font-bold text-white tracking-tight">
-              Cash-Prize Leagues & Monthly Tournaments
+              Find your next soccer league
             </h2>
             <p className="text-sm text-slate-400 mt-1">
-              Strictly Co-Ed Leagues · Default pricing: $250 Free Agent · $2,500 Full Team (editable per league). Choose 1x/wk, 2x/wk fast-track, or 1-day weekend cash cups.
+              Explore open leagues and tournaments, compare divisions, and join the game that fits your schedule.
             </p>
           </div>
 
@@ -517,7 +589,10 @@ export const LeagueDirectory: React.FC<LeagueDirectoryProps> = ({
                 <button
                   key={tp}
                   type="button"
-                  onClick={() => setTypeFilter(tp)}
+                  onClick={() => {
+                    setTypeFilter(tp);
+                    onSelectLeagueType(tp);
+                  }}
                   className={`min-h-[36px] rounded-md px-3 py-1 text-xs font-semibold cursor-pointer whitespace-nowrap ${
                     typeFilter === tp
                       ? 'bg-emerald-500 text-slate-950'
@@ -633,30 +708,20 @@ export const LeagueDirectory: React.FC<LeagueDirectoryProps> = ({
             </div>
             <div className="space-y-1.5 max-w-xl mx-auto">
               <h3 className="font-display text-2xl font-bold text-white">
-                No Active Leagues Running Yet
+                New seasons are on the way
               </h3>
               <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
-                This platform is in clean pre-launch mode with zero active leagues and no pre-loaded venues.
-                Use the Admin Console to type your custom field/venue name, city, and pricing ($250 Free Agent / $2,500 Full Team defaults).
+                There are no published leagues right now. Join the waitlist and we’ll let you know when the next soccer season opens.
               </p>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-              {onOpenAdmin && (
-                <button
-                  type="button"
-                  onClick={onOpenAdmin}
-                  style={{ backgroundColor: db.brand.primaryColor }}
-                  className="min-h-[42px] rounded-lg px-5 py-2 text-xs font-bold text-slate-950 hover:opacity-90 cursor-pointer"
-                >
-                  Create First League in Admin (PIN: {db.brand.adminPin})
-                </button>
-              )}
               <button
                 type="button"
                 onClick={() => onRegisterLeague('', 'waitlist')}
-                className="min-h-[42px] rounded-lg border border-white/15 bg-white/5 px-5 py-2 text-xs font-semibold text-white hover:bg-white/10 cursor-pointer"
+                style={{ backgroundColor: db.brand.primaryColor }}
+                className="min-h-[42px] rounded-lg px-5 py-2 text-xs font-bold text-slate-950 hover:opacity-90 cursor-pointer"
               >
-                Join Early-Bird Waitlist
+                Join the Waitlist
               </button>
             </div>
           </div>
@@ -871,14 +936,14 @@ export const LeagueDirectory: React.FC<LeagueDirectoryProps> = ({
       </section>
 
       {/* Sponsors & Partners Showcase + Become a Partner Form */}
-      <section className="mx-auto max-w-7xl px-4 sm:px-6 space-y-6">
+      <section id="partnerships" className="mx-auto max-w-7xl px-4 sm:px-6 space-y-6 scroll-mt-24">
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-white/10 pb-4">
           <div>
             <h2 className="font-display text-3xl font-bold text-white tracking-tight">
               Venue Partners & Local Sponsors
             </h2>
             <p className="text-sm text-slate-400 mt-1">
-              Supporting cash prize pots, turf availability, and player perks across our divisions.
+              Local venues and community partners help make every season possible.
             </p>
           </div>
           <button

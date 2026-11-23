@@ -14,6 +14,7 @@ export default function App() {
   const [loadError, setLoadError] = useState('');
 
   const [activeTab, setActiveTab] = useState<AppTab>('leagues');
+  const [selectedLeagueType, setSelectedLeagueType] = useState<'All' | 'League' | 'Tournament'>('All');
   const [marketSubTab, setMarketSubTab] = useState<'board' | 'requests' | 'subs' | 'deals'>('board');
   const [selectedLeagueId, setSelectedLeagueId] = useState<string>('');
   const [selectedTeamId, setSelectedTeamId] = useState<string>('');
@@ -23,6 +24,14 @@ export default function App() {
   const [regLeagueId, setRegLeagueId] = useState<string>('');
   const [regMode, setRegMode] = useState<'team' | 'split' | 'solo' | 'waitlist'>('team');
   const [regSplitCode, setRegSplitCode] = useState<string>('');
+
+  const navigateToTab = (tab: AppTab) => {
+    const nextPath = tab === 'admin' ? '/admin' : '/';
+    if (window.location.pathname !== nextPath) {
+      window.history.pushState({}, '', nextPath);
+    }
+    setActiveTab(tab);
+  };
 
   const syncSelections = (data: LeagueDatabase) => {
     setSelectedLeagueId((prev) =>
@@ -59,9 +68,7 @@ export default function App() {
 
   useEffect(() => {
     fetchState();
-    if (window.location.pathname === '/admin') {
-      setActiveTab('admin');
-    }
+    setActiveTab(window.location.pathname === '/admin' ? 'admin' : 'leagues');
     const params = new URLSearchParams(window.location.search);
     const joinCode = params.get('join');
     if (joinCode) {
@@ -69,6 +76,12 @@ export default function App() {
       setRegSplitCode(joinCode.toUpperCase());
       setRegModalOpen(true);
     }
+
+    const handlePopState = () => {
+      setActiveTab(window.location.pathname === '/admin' ? 'admin' : 'leagues');
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
   if (loading) {
@@ -115,7 +128,16 @@ export default function App() {
       <TopBar
         brand={db.brand}
         activeTab={activeTab}
-        onSelectTab={setActiveTab}
+        selectedLeagueType={selectedLeagueType}
+        onSelectTab={navigateToTab}
+        onSelectLeagueType={setSelectedLeagueType}
+        onNavigateToPartnerships={() => {
+          navigateToTab('leagues');
+          window.setTimeout(
+            () => document.getElementById('partnerships')?.scrollIntoView({ behavior: 'smooth' }),
+            0
+          );
+        }}
         onOpenRegister={() => {
           setRegLeagueId(selectedLeagueId || db.leagues[0]?.id || '');
           setRegMode('team');
@@ -128,6 +150,8 @@ export default function App() {
         {activeTab === 'leagues' && (
           <LeagueDirectory
             db={db}
+            selectedLeagueType={selectedLeagueType}
+            onSelectLeagueType={setSelectedLeagueType}
             onRegisterLeague={(leagueId, mode = 'team') => {
               setRegLeagueId(leagueId);
               setRegMode(mode);
@@ -138,11 +162,6 @@ export default function App() {
               setSelectedLeagueId(leagueId);
               setActiveTab('hub');
             }}
-            onOpenMarket={() => {
-              setMarketSubTab('board');
-              setActiveTab('market');
-            }}
-            onOpenAdmin={() => setActiveTab('admin')}
             onDatabaseUpdate={handleDatabaseUpdate}
           />
         )}
@@ -156,7 +175,7 @@ export default function App() {
               setMarketSubTab('board');
               setActiveTab('market');
             }}
-            onOpenAdmin={() => setActiveTab('admin')}
+            onOpenAdmin={() => navigateToTab('admin')}
             onOpenClubhouse={(teamId, playerId) => {
               setSelectedTeamId(teamId);
               if (playerId) setActivePlayerId(playerId);
@@ -180,7 +199,7 @@ export default function App() {
             activePlayerId={activePlayerId}
             onSelectActivePlayer={setActivePlayerId}
             initialSubTab={marketSubTab}
-            onOpenAdmin={() => setActiveTab('admin')}
+            onOpenAdmin={() => navigateToTab('admin')}
             onDatabaseUpdate={handleDatabaseUpdate}
           />
         )}
@@ -209,7 +228,7 @@ export default function App() {
               setMarketSubTab(tab);
               setActiveTab('market');
             }}
-            onOpenAdmin={() => setActiveTab('admin')}
+            onOpenAdmin={() => navigateToTab('admin')}
             onDatabaseUpdate={handleDatabaseUpdate}
           />
         )}
@@ -219,9 +238,9 @@ export default function App() {
         )}
       </main>
 
-      <footer className="border-t border-white/10 bg-[#090D12] py-6 pb-20 md:pb-6">
+      <footer className="border-t border-white/10 bg-[#090D12] py-6 pb-20 lg:pb-6">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
-          <div>{db.brand.siteName} Adult Cash-Prize Soccer Leagues & Super Cups</div>
+          <div>{db.brand.siteName} · Leagues, tournaments & player community</div>
           <div className="flex flex-wrap items-center gap-4">
             <button
               type="button"
@@ -247,19 +266,11 @@ export default function App() {
             >
               Market & Subs
             </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('admin')}
-              className="text-slate-600 hover:text-slate-300 cursor-pointer"
-              title="Staff & Founder Console"
-            >
-              Admin Login
-            </button>
           </div>
         </div>
       </footer>
 
-      <MobileBottomBar brand={db.brand} activeTab={activeTab} onSelectTab={setActiveTab} />
+      <MobileBottomBar brand={db.brand} activeTab={activeTab} onSelectTab={navigateToTab} />
 
       <RegistrationModal
         isOpen={regModalOpen}
@@ -270,7 +281,7 @@ export default function App() {
         initialSplitCode={regSplitCode}
         onOpenAdmin={() => {
           setRegModalOpen(false);
-          setActiveTab('admin');
+          navigateToTab('admin');
         }}
         onDatabaseUpdate={handleDatabaseUpdate}
         onGoToClubhouse={(teamId) => {
