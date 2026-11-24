@@ -2,6 +2,8 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { Pool } from 'pg';
+import type { PoolClient } from 'pg';
 import type {
   BrandConfig,
   ChampionsCupConfig,
@@ -31,10 +33,18 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const DATA_DIR = path.join(__dirname, 'data');
+const APP_DIR = process.env.VERCEL ? process.cwd() : __dirname;
+const DATA_DIR = path.join(APP_DIR, 'data');
 const DB_FILE = path.join(DATA_DIR, 'league-db.json');
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 const REF_PASSCODE = process.env.REF_PASSCODE || 'REF2026';
+const POSTGRES_CONNECTION_STRING = process.env.POSTGRES_URL || process.env.DATABASE_URL;
+const POSTGRES_TABLE = 'ball_out_state';
+const POSTGRES_LOCK_ID = 85172931;
+
+let postgresPool: Pool | undefined;
+let postgresSchemaReady: Promise<void> | undefined;
+let postgresWritePending = false;
 
 const MARKET_COOLDOWN_MS = 72 * 60 * 60 * 1000;
 const LIFELINE_COOLDOWN_MS = 72 * 60 * 60 * 1000;
@@ -163,13 +173,16 @@ function createSeedDatabase(): LeagueDatabase {
   };
 }
 
-function loadDatabase(): LeagueDatabase {
-  if (!fs.existsSync(DATA_DIR)) {
+function loadDatabase(persistToFile = true): LeagueDatabase {
+  if (persistToFile && !fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
   if (!fs.existsSync(DB_FILE)) {
     const seed = createSeedDatabase();
-    fs.writeFileSync(DB_FILE, JSON.stringify(seed, null, 2), 'utf-8');
+    if (persistToFile) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+      fs.writeFileSync(DB_FILE, JSON.stringify(seed, null, 2), 'utf-8');
+    }
     return seed;
   }
   try {
@@ -187,7 +200,9 @@ function loadDatabase(): LeagueDatabase {
       !parsed.teamInvites
     ) {
       const seed = createSeedDatabase();
-      fs.writeFileSync(DB_FILE, JSON.stringify(seed, null, 2), 'utf-8');
+      if (persistToFile) {
+        fs.writeFileSync(DB_FILE, JSON.stringify(seed, null, 2), 'utf-8');
+      }
       return seed;
     }
     const dbLoaded = parsed as LeagueDatabase;
@@ -217,16 +232,98 @@ function loadDatabase(): LeagueDatabase {
     return dbLoaded;
   } catch {
     const seed = createSeedDatabase();
-    fs.writeFileSync(DB_FILE, JSON.stringify(seed, null, 2), 'utf-8');
+    if (persistToFile) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+      fs.writeFileSync(DB_FILE, JSON.stringify(seed, null, 2), 'utf-8');
+    }
     return seed;
   }
 }
 
 function saveDatabase(db: LeagueDatabase): void {
+  if (POSTGRES_CONNECTION_STRING) {
+    postgresWritePending = true;
+    return;
+  }
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
   fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf-8');
+}
+
+function getPostgresPool(): Pool {
+  if (!POSTGRES_CONNECTION_STRING) {
+    throw new Error('POSTGRES_URL or DATABASE_URL must be configured.');
+  }
+  if (!postgresPool) {
+    postgresPool = new Pool({
+      connectionString: POSTGRES_CONNECTION_STRING,
+      max: 1,
+      connectionTimeoutMillis: 10000,
+    });
+  }
+  return postgresPool;
+}
+
+async function ensurePostgresSchema(client: PoolClient): Promise<void> {
+  if (!postgresSchemaReady) {
+    postgresSchemaReady = client
+      .query(
+        `CREATE TABLE IF NOT EXISTS ${POSTGRES_TABLE} (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          payload JSONB NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )`
+      )
+      .then(() => undefined)
+      .catch((error: unknown) => {
+        postgresSchemaReady = undefined;
+        throw error;
+      });
+  }
+  await postgresSchemaReady;
+}
+
+async function loadPostgresDatabase(
+  client: PoolClient,
+  initialState: LeagueDatabase
+): Promise<LeagueDatabase> {
+  const existing = await client.query<{ payload: LeagueDatabase | string }>(
+    `SELECT payload FROM ${POSTGRES_TABLE} WHERE id = 1`
+  );
+  if (existing.rows[0]) {
+    return typeof existing.rows[0].payload === 'string'
+      ? (JSON.parse(existing.rows[0].payload) as LeagueDatabase)
+      : existing.rows[0].payload;
+  }
+
+  await client.query(
+    `INSERT INTO ${POSTGRES_TABLE} (id, payload)
+     VALUES (1, $1::jsonb)
+     ON CONFLICT (id) DO NOTHING`,
+    [JSON.stringify(initialState)]
+  );
+  const initialized = await client.query<{ payload: LeagueDatabase | string }>(
+    `SELECT payload FROM ${POSTGRES_TABLE} WHERE id = 1`
+  );
+  const payload = initialized.rows[0]?.payload;
+  if (!payload) {
+    throw new Error('Postgres league state could not be initialized.');
+  }
+  return typeof payload === 'string' ? (JSON.parse(payload) as LeagueDatabase) : payload;
+}
+
+async function persistPostgresDatabase(
+  client: PoolClient,
+  db: LeagueDatabase
+): Promise<void> {
+  await client.query(
+    `INSERT INTO ${POSTGRES_TABLE} (id, payload, updated_at)
+     VALUES (1, $1::jsonb, NOW())
+     ON CONFLICT (id)
+     DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()`,
+    [JSON.stringify(db)]
+  );
 }
 
 function computeServerStandings(leagueId: string, db: LeagueDatabase) {
@@ -259,11 +356,94 @@ function computeServerStandings(leagueId: string, db: LeagueDatabase) {
     .map((s, idx) => ({ ...s, rank: idx + 1 }));
 }
 
-async function startServer() {
+export async function createApp() {
   const app = express();
   app.use(express.json({ limit: '4mb' }));
 
-  let db = loadDatabase();
+  let db = loadDatabase(!POSTGRES_CONNECTION_STRING);
+
+  if (POSTGRES_CONNECTION_STRING) {
+    app.use('/api', async (_req, res, next) => {
+      let client: PoolClient | undefined;
+      let transactionOpen = false;
+      let released = false;
+      const finishTransaction = async (commit: boolean) => {
+        if (!client || released) return;
+        try {
+          if (transactionOpen) {
+            await client.query(commit ? 'COMMIT' : 'ROLLBACK');
+            transactionOpen = false;
+          }
+        } catch (error) {
+          released = true;
+          client.release(true);
+          throw error;
+        }
+        released = true;
+        client.release();
+      };
+
+      try {
+        client = await getPostgresPool().connect();
+        await ensurePostgresSchema(client);
+        await client.query('BEGIN');
+        transactionOpen = true;
+        await client.query('SELECT pg_advisory_xact_lock($1::bigint)', [POSTGRES_LOCK_ID]);
+        db = await loadPostgresDatabase(client, db);
+        postgresWritePending = false;
+
+        const activeClient = client;
+        const sendJson = res.json.bind(res);
+        let responseStarted = false;
+        res.once('finish', () => {
+          void finishTransaction(false).catch((error: unknown) =>
+            console.error('Failed to close the Postgres request transaction.', error)
+          );
+        });
+        res.once('close', () => {
+          if (!res.writableEnded) {
+            void finishTransaction(false).catch((error: unknown) =>
+              console.error('Failed to roll back the disconnected Postgres request.', error)
+            );
+          }
+        });
+        res.json = (body: unknown) => {
+          if (responseStarted) return res;
+          responseStarted = true;
+          const shouldPersist = postgresWritePending;
+          postgresWritePending = false;
+          void (async () => {
+            if (shouldPersist) {
+              await persistPostgresDatabase(activeClient, db);
+            }
+            await finishTransaction(true);
+            sendJson(body);
+          })().catch(async (error: unknown) => {
+            console.error('Failed to persist league state to Postgres.', error);
+            try {
+              await finishTransaction(false);
+            } catch (rollbackError) {
+              console.error('Failed to roll back the Postgres request transaction.', rollbackError);
+            }
+            if (!res.headersSent) {
+              res.status(500);
+              sendJson({ error: 'Unable to save league data. Please try again.' });
+            }
+          });
+          return res;
+        };
+        next();
+      } catch (error) {
+        console.error('Unable to connect to the Postgres league database.', error);
+        try {
+          await finishTransaction(false);
+        } catch (rollbackError) {
+          console.error('Failed to roll back the Postgres request transaction.', rollbackError);
+        }
+        res.status(503).json({ error: 'League database is unavailable.' });
+      }
+    });
+  }
 
   app.get('/api/state', (_req, res) => {
     res.json(db);
@@ -2688,24 +2868,39 @@ async function startServer() {
     res.json(db);
   });
 
-  if (process.env.NODE_ENV !== 'production') {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(__dirname, 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (_req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
+  app.use('/api', (_req, res) => {
+    res.status(404).json({ error: 'API route not found.' });
+  });
+
+  if (!process.env.VERCEL) {
+    if (process.env.NODE_ENV !== 'production') {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+    } else {
+      const distPath = path.join(__dirname, 'dist');
+      app.use(express.static(distPath));
+      app.get('*', (_req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+      });
+    }
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Ball Out Soccer server running at http://localhost:${PORT}`);
-  });
+  return app;
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  void createApp()
+    .then((app) =>
+      app.listen(PORT, '0.0.0.0', () => {
+        console.log(`Ball Out Soccer server running at http://localhost:${PORT}`);
+      })
+    )
+    .catch((error: unknown) => {
+      console.error('Failed to start Ball Out Soccer server.', error);
+      process.exitCode = 1;
+    });
+}

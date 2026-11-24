@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/**/*.ts": {
+      "includeFiles": "data/league-db.json"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/admin",
+      "destination": "/"
+    }
+  ]
+}

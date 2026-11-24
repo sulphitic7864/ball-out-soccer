@@ -55,7 +55,14 @@ export default function App() {
     setLoadError('');
     try {
       const res = await fetch('/api/state');
-      if (!res.ok) throw new Error('Failed to load league platform data');
+      if (!res.ok) {
+        const errorBody = await res.json().catch(() => null);
+        const message =
+          errorBody && typeof errorBody.error === 'string'
+            ? errorBody.error
+            : `Failed to load league platform data (${res.status})`;
+        throw new Error(message);
+      }
       const data: LeagueDatabase = await res.json();
       setDb(data);
       syncSelections(data);
