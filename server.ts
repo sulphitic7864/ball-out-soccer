@@ -362,6 +362,22 @@ export async function createApp() {
 
   let db = loadDatabase(!POSTGRES_CONNECTION_STRING);
 
+  if (!POSTGRES_CONNECTION_STRING && process.env.VERCEL) {
+    app.use('/api', (req, res, next) => {
+      if (req.method === 'GET' || req.method === 'HEAD') {
+        next();
+        return;
+      }
+      if (req.method === 'POST' && req.path === '/auth/verify') {
+        next();
+        return;
+      }
+      res.status(503).json({
+        error: 'This demo deployment is read-only. Connect Postgres to save changes.',
+      });
+    });
+  }
+
   if (POSTGRES_CONNECTION_STRING) {
     app.use('/api', async (_req, res, next) => {
       let client: PoolClient | undefined;
