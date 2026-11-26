@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ShieldCheck,
   Lock,
@@ -51,22 +51,51 @@ import {
   getPlayerEligibilityForMatch,
 } from '../utils/leagueHelpers.ts';
 
+export type AdminSection =
+  | 'referee'
+  | 'leagues'
+  | 'supercup'
+  | 'customizer'
+  | 'staff'
+  | 'ops'
+  | 'venues'
+  | 'payments';
+
 interface AdminRefDashboardProps {
   db: LeagueDatabase;
+  initialSection: AdminSection;
+  onNavigateSection: (section: AdminSection) => void;
   onDatabaseUpdate: (db: LeagueDatabase) => void;
 }
 
 export const AdminRefDashboard: React.FC<AdminRefDashboardProps> = ({
   db,
+  initialSection,
+  onNavigateSection,
   onDatabaseUpdate,
 }) => {
-  const [authRole, setAuthRole] = useState<'none' | 'referee' | 'admin'>('none');
+  const [authRole, setAuthRole] = useState<'none' | 'referee' | 'admin'>(() => {
+    const storedRole = window.sessionStorage.getItem('ball-out-admin-role');
+    return storedRole === 'admin' || storedRole === 'referee' ? storedRole : 'none';
+  });
   const [passcode, setPasscode] = useState('');
   const [authError, setAuthError] = useState('');
 
-  const [section, setSection] = useState<
-    'referee' | 'leagues' | 'supercup' | 'customizer' | 'staff' | 'ops' | 'venues' | 'payments'
-  >('referee');
+  const [section, setSection] = useState<AdminSection>(initialSection);
+  const navigateSection = (nextSection: AdminSection) => {
+    setSection(nextSection);
+    onNavigateSection(nextSection);
+  };
+
+  useEffect(() => {
+    setSection(initialSection);
+  }, [initialSection]);
+
+  useEffect(() => {
+    if (authRole === 'referee' && initialSection !== 'referee') {
+      navigateSection('referee');
+    }
+  }, [authRole, initialSection]);
   const [busy, setBusy] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
   const navigationGroups = [
@@ -221,7 +250,8 @@ export const AdminRefDashboard: React.FC<AdminRefDashboardProps> = ({
       return;
     }
     setAuthRole(data.role);
-    setSection(data.role === 'admin' ? 'leagues' : 'referee');
+    window.sessionStorage.setItem('ball-out-admin-role', data.role);
+    navigateSection(data.role === 'admin' ? initialSection : 'referee');
   };
 
   if (authRole === 'none') {
@@ -552,7 +582,10 @@ export const AdminRefDashboard: React.FC<AdminRefDashboardProps> = ({
           )}
           <button
             type="button"
-            onClick={() => setAuthRole('none')}
+            onClick={() => {
+              window.sessionStorage.removeItem('ball-out-admin-role');
+              setAuthRole('none');
+            }}
             className="min-h-[38px] inline-flex items-center gap-1.5 rounded-lg border border-white/15 px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white cursor-pointer"
           >
             <LogOut className="h-3.5 w-3.5" />
@@ -584,11 +617,14 @@ export const AdminRefDashboard: React.FC<AdminRefDashboardProps> = ({
                   {group.items.map((item) => {
                     const isActive = section === item.id;
                     return (
-                      <button
+                      <a
                         key={item.id}
-                        type="button"
+                        href={item.id === 'leagues' ? '/admin' : `/admin/${item.id}`}
                         aria-current={isActive ? 'page' : undefined}
-                        onClick={() => setSection(item.id)}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          navigateSection(item.id);
+                        }}
                         className={`relative flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-xs font-semibold transition-colors cursor-pointer ${
                           isActive
                             ? 'border border-emerald-400/20 bg-emerald-500/10 text-emerald-200'
@@ -609,7 +645,7 @@ export const AdminRefDashboard: React.FC<AdminRefDashboardProps> = ({
                             {item.badge}
                           </span>
                         )}
-                      </button>
+                      </a>
                     );
                   })}
                 </div>

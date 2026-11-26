@@ -5,16 +5,56 @@ import { LeagueDirectory } from './components/LeagueDirectory.tsx';
 import { LiveLeagueHub } from './components/LiveLeagueHub.tsx';
 import { TransferMarket } from './components/TransferMarket.tsx';
 import { Clubhouse } from './components/Clubhouse.tsx';
-import { AdminRefDashboard } from './components/AdminRefDashboard.tsx';
+import { AdminRefDashboard, type AdminSection } from './components/AdminRefDashboard.tsx';
 import { RegistrationModal } from './components/RegistrationModal.tsx';
 
+function getRouteState(): {
+  tab: AppTab;
+  leagueType: 'All' | 'League' | 'Tournament';
+  adminSection: AdminSection;
+} {
+  const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
+  const adminSection = pathname.split('/')[2] as AdminSection | undefined;
+  const validAdminSections: AdminSection[] = [
+    'referee',
+    'leagues',
+    'supercup',
+    'customizer',
+    'staff',
+    'ops',
+    'venues',
+    'payments',
+  ];
+
+  if (pathname === '/admin' || pathname.startsWith('/admin/')) {
+    return {
+      tab: 'admin',
+      leagueType: 'All',
+      adminSection:
+        adminSection && validAdminSections.includes(adminSection) ? adminSection : 'leagues',
+    };
+  }
+  if (pathname === '/schedule') return { tab: 'hub', leagueType: 'All', adminSection: 'leagues' };
+  if (pathname === '/teams') return { tab: 'clubhouse', leagueType: 'All', adminSection: 'leagues' };
+  if (pathname === '/market') return { tab: 'market', leagueType: 'All', adminSection: 'leagues' };
+  return {
+    tab: 'leagues',
+    leagueType:
+      pathname === '/tournaments' ? 'Tournament' : pathname === '/leagues' ? 'League' : 'All',
+    adminSection: 'leagues',
+  };
+}
+
 export default function App() {
+  const initialRoute = getRouteState();
   const [db, setDb] = useState<LeagueDatabase | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
-  const [activeTab, setActiveTab] = useState<AppTab>('leagues');
-  const [selectedLeagueType, setSelectedLeagueType] = useState<'All' | 'League' | 'Tournament'>('All');
+  const [activeTab, setActiveTab] = useState<AppTab>(initialRoute.tab);
+  const [selectedLeagueType, setSelectedLeagueType] = useState(initialRoute.leagueType);
+  const [activeAdminSection, setActiveAdminSection] = useState<AdminSection>(initialRoute.adminSection);
+  const [currentPath, setCurrentPath] = useState(window.location.pathname);
   const [marketSubTab, setMarketSubTab] = useState<'board' | 'requests' | 'subs' | 'deals'>('board');
   const [selectedLeagueId, setSelectedLeagueId] = useState<string>('');
   const [selectedTeamId, setSelectedTeamId] = useState<string>('');
@@ -26,11 +66,55 @@ export default function App() {
   const [regSplitCode, setRegSplitCode] = useState<string>('');
 
   const navigateToTab = (tab: AppTab) => {
-    const nextPath = tab === 'admin' ? '/admin' : '/';
-    if (window.location.pathname !== nextPath) {
-      window.history.pushState({}, '', nextPath);
-    }
+    const routes: Record<AppTab, string> = {
+      leagues:
+        selectedLeagueType === 'Tournament'
+          ? '/tournaments'
+          : selectedLeagueType === 'League'
+            ? '/leagues'
+            : '/programs',
+      hub: '/schedule',
+      market: '/market',
+      clubhouse: '/teams',
+      admin: '/admin',
+    };
+    const nextPath = routes[tab];
+    if (window.location.pathname !== nextPath) window.history.pushState({}, '', nextPath);
+    setCurrentPath(nextPath);
     setActiveTab(tab);
+    window.scrollTo({ top: 0 });
+  };
+
+  const navigateToLeagueType = (type: 'All' | 'League' | 'Tournament') => {
+    const nextPath =
+      type === 'Tournament' ? '/tournaments' : type === 'League' ? '/leagues' : '/programs';
+    setSelectedLeagueType(type);
+    setActiveTab('leagues');
+    if (window.location.pathname !== nextPath) window.history.pushState({}, '', nextPath);
+    setCurrentPath(nextPath);
+    window.scrollTo({ top: 0 });
+  };
+
+  const navigateToAdminSection = (section: AdminSection) => {
+    const nextPath = section === 'leagues' ? '/admin' : `/admin/${section}`;
+    setActiveAdminSection(section);
+    setActiveTab('admin');
+    if (window.location.pathname !== nextPath) window.history.pushState({}, '', nextPath);
+    setCurrentPath(nextPath);
+    window.scrollTo({ top: 0 });
+  };
+
+  const navigateToPartnerships = () => {
+    setActiveTab('leagues');
+    setSelectedLeagueType('All');
+    if (window.location.pathname !== '/partnerships') {
+      window.history.pushState({}, '', '/partnerships');
+    }
+    setCurrentPath('/partnerships');
+    window.setTimeout(
+      () => document.getElementById('partnerships')?.scrollIntoView({ behavior: 'smooth' }),
+      0
+    );
   };
 
   const syncSelections = (data: LeagueDatabase) => {
@@ -75,7 +159,6 @@ export default function App() {
 
   useEffect(() => {
     fetchState();
-    setActiveTab(window.location.pathname === '/admin' ? 'admin' : 'leagues');
     const params = new URLSearchParams(window.location.search);
     const joinCode = params.get('join');
     if (joinCode) {
@@ -85,11 +168,27 @@ export default function App() {
     }
 
     const handlePopState = () => {
-      setActiveTab(window.location.pathname === '/admin' ? 'admin' : 'leagues');
+      const route = getRouteState();
+      setActiveTab(route.tab);
+      setSelectedLeagueType(route.leagueType);
+      setActiveAdminSection(route.adminSection);
+      setCurrentPath(window.location.pathname);
+      if (window.location.pathname === '/partnerships') {
+        window.setTimeout(
+          () => document.getElementById('partnerships')?.scrollIntoView({ behavior: 'smooth' }),
+          0
+        );
+      }
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
+
+  useEffect(() => {
+    if (!loading && window.location.pathname === '/partnerships') {
+      document.getElementById('partnerships')?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [currentPath, loading]);
 
   if (loading) {
     return (
@@ -136,16 +235,11 @@ export default function App() {
         <TopBar
           brand={db.brand}
           activeTab={activeTab}
+          activePath={currentPath}
           selectedLeagueType={selectedLeagueType}
           onSelectTab={navigateToTab}
-          onSelectLeagueType={setSelectedLeagueType}
-          onNavigateToPartnerships={() => {
-            navigateToTab('leagues');
-            window.setTimeout(
-              () => document.getElementById('partnerships')?.scrollIntoView({ behavior: 'smooth' }),
-              0
-            );
-          }}
+          onSelectLeagueType={navigateToLeagueType}
+          onNavigateToPartnerships={navigateToPartnerships}
           onOpenRegister={() => {
             setRegLeagueId(selectedLeagueId || db.leagues[0]?.id || '');
             setRegMode('team');
@@ -160,7 +254,7 @@ export default function App() {
           <LeagueDirectory
             db={db}
             selectedLeagueType={selectedLeagueType}
-            onSelectLeagueType={setSelectedLeagueType}
+            onSelectLeagueType={navigateToLeagueType}
             onRegisterLeague={(leagueId, mode = 'team') => {
               setRegLeagueId(leagueId);
               setRegMode(mode);
@@ -169,7 +263,7 @@ export default function App() {
             }}
             onOpenHub={(leagueId) => {
               setSelectedLeagueId(leagueId);
-              setActiveTab('hub');
+              navigateToTab('hub');
             }}
             onDatabaseUpdate={handleDatabaseUpdate}
           />
@@ -182,13 +276,13 @@ export default function App() {
             onSelectLeague={setSelectedLeagueId}
             onOpenMarket={() => {
               setMarketSubTab('board');
-              setActiveTab('market');
+              navigateToTab('market');
             }}
             onOpenAdmin={() => navigateToTab('admin')}
             onOpenClubhouse={(teamId, playerId) => {
               setSelectedTeamId(teamId);
               if (playerId) setActivePlayerId(playerId);
-              setActiveTab('clubhouse');
+              navigateToTab('clubhouse');
             }}
             onOpenRegister={(leagueId, mode = 'team', splitCode = '') => {
               setRegLeagueId(leagueId);
@@ -235,7 +329,7 @@ export default function App() {
               if (leagueId) setSelectedLeagueId(leagueId);
               if (playerId) setActivePlayerId(playerId);
               setMarketSubTab(tab);
-              setActiveTab('market');
+              navigateToTab('market');
             }}
             onOpenAdmin={() => navigateToTab('admin')}
             onDatabaseUpdate={handleDatabaseUpdate}
@@ -243,7 +337,12 @@ export default function App() {
         )}
 
         {activeTab === 'admin' && (
-          <AdminRefDashboard db={db} onDatabaseUpdate={handleDatabaseUpdate} />
+          <AdminRefDashboard
+            db={db}
+            initialSection={activeAdminSection}
+            onNavigateSection={navigateToAdminSection}
+            onDatabaseUpdate={handleDatabaseUpdate}
+          />
         )}
       </main>
 
@@ -282,7 +381,12 @@ export default function App() {
       )}
 
       {activeTab !== 'admin' && (
-        <MobileBottomBar brand={db.brand} activeTab={activeTab} onSelectTab={navigateToTab} />
+        <MobileBottomBar
+          brand={db.brand}
+          activeTab={activeTab}
+          onSelectTab={navigateToTab}
+          onSelectLeagueType={navigateToLeagueType}
+        />
       )}
 
       <RegistrationModal
@@ -299,7 +403,7 @@ export default function App() {
         onDatabaseUpdate={handleDatabaseUpdate}
         onGoToClubhouse={(teamId) => {
           setSelectedTeamId(teamId);
-          setActiveTab('clubhouse');
+          navigateToTab('clubhouse');
         }}
       />
     </div>

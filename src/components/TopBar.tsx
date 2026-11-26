@@ -7,6 +7,7 @@ export type AppTab = 'leagues' | 'hub' | 'market' | 'clubhouse' | 'admin';
 interface TopBarProps {
   brand: BrandConfig;
   activeTab: AppTab;
+  activePath: string;
   selectedLeagueType: 'All' | 'League' | 'Tournament';
   onSelectTab: (tab: AppTab) => void;
   onSelectLeagueType: (type: 'All' | 'League' | 'Tournament') => void;
@@ -17,6 +18,7 @@ interface TopBarProps {
 export const TopBar: React.FC<TopBarProps> = ({
   brand,
   activeTab,
+  activePath,
   selectedLeagueType,
   onSelectTab,
   onSelectLeagueType,
@@ -25,43 +27,47 @@ export const TopBar: React.FC<TopBarProps> = ({
 }) => {
   const navItems: {
     label: string;
+    href: string;
     isActive: boolean;
     onClick: () => void;
   }[] = [
     {
       label: 'Programs',
-      isActive: activeTab === 'leagues' && selectedLeagueType !== 'Tournament',
-      onClick: () => {
-        onSelectTab('leagues');
-        onSelectLeagueType('All');
-      },
+      href: '/programs',
+      isActive:
+        activeTab === 'leagues' &&
+        selectedLeagueType !== 'Tournament' &&
+        activePath !== '/partnerships',
+      onClick: () => onSelectLeagueType('All'),
     },
     {
       label: 'Tournaments',
+      href: '/tournaments',
       isActive: activeTab === 'leagues' && selectedLeagueType === 'Tournament',
-      onClick: () => {
-        onSelectTab('leagues');
-        onSelectLeagueType('Tournament');
-      },
+      onClick: () => onSelectLeagueType('Tournament'),
     },
     {
       label: 'Schedule',
+      href: '/schedule',
       isActive: activeTab === 'hub',
       onClick: () => onSelectTab('hub'),
     },
     {
       label: 'Teams',
+      href: '/teams',
       isActive: activeTab === 'clubhouse',
       onClick: () => onSelectTab('clubhouse'),
     },
     {
       label: 'Player Market',
+      href: '/market',
       isActive: activeTab === 'market',
       onClick: () => onSelectTab('market'),
     },
     {
       label: 'Partnerships',
-      isActive: false,
+      href: '/partnerships',
+      isActive: activePath === '/partnerships',
       onClick: onNavigateToPartnerships,
     },
   ];
@@ -69,9 +75,12 @@ export const TopBar: React.FC<TopBarProps> = ({
   return (
     <header className="sticky top-0 z-40 border-b border-white/10 bg-[#090D12]/95 backdrop-blur-md">
       <div className="mx-auto flex min-h-20 max-w-7xl items-center justify-between gap-5 px-4 sm:px-6">
-        <button
-          type="button"
-          onClick={() => onSelectTab('leagues')}
+        <a
+          href="/programs"
+          onClick={(event) => {
+            event.preventDefault();
+            onSelectLeagueType('All');
+          }}
           className="font-display text-2xl sm:text-3xl font-extrabold tracking-tight text-white whitespace-nowrap shrink-0 cursor-pointer"
         >
           <span>{brand.siteName}</span>
@@ -79,15 +88,18 @@ export const TopBar: React.FC<TopBarProps> = ({
             className="ml-1 inline-block h-2.5 w-2.5 rounded-sm align-middle"
             style={{ backgroundColor: brand.primaryColor }}
           />
-        </button>
+        </a>
 
         <nav className="hidden lg:flex flex-1 items-center justify-center gap-3" aria-label="Primary Navigation">
           {navItems.map((item) => {
             return (
-              <button
+              <a
                 key={item.label}
-                type="button"
-                onClick={item.onClick}
+                href={item.href}
+                onClick={(event) => {
+                  event.preventDefault();
+                  item.onClick();
+                }}
                 className={`relative py-3 text-sm font-semibold whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
                   item.isActive ? 'text-white' : 'text-slate-400 hover:text-slate-100'
                 }`}
@@ -99,7 +111,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                     style={{ backgroundColor: brand.primaryColor }}
                   />
                 )}
-              </button>
+              </a>
             );
           })}
         </nav>
@@ -123,12 +135,13 @@ export const MobileBottomBar: React.FC<{
   brand: BrandConfig;
   activeTab: AppTab;
   onSelectTab: (tab: AppTab) => void;
-}> = ({ brand, activeTab, onSelectTab }) => {
-  const items: { id: AppTab; label: string; icon: React.ReactNode }[] = [
-    { id: 'leagues', label: 'Leagues', icon: <Trophy className="h-5 w-5" /> },
-    { id: 'hub', label: 'Hub', icon: <Calendar className="h-5 w-5" /> },
-    { id: 'market', label: 'Market', icon: <ArrowLeftRight className="h-5 w-5" /> },
-    { id: 'clubhouse', label: 'Clubhouse', icon: <MessageSquare className="h-5 w-5" /> },
+  onSelectLeagueType: (type: 'All' | 'League' | 'Tournament') => void;
+}> = ({ brand, activeTab, onSelectTab, onSelectLeagueType }) => {
+  const items: { id: AppTab; label: string; icon: React.ReactNode; href: string }[] = [
+    { id: 'leagues', label: 'Leagues', icon: <Trophy className="h-5 w-5" />, href: '/programs' },
+    { id: 'hub', label: 'Hub', icon: <Calendar className="h-5 w-5" />, href: '/schedule' },
+    { id: 'market', label: 'Market', icon: <ArrowLeftRight className="h-5 w-5" />, href: '/market' },
+    { id: 'clubhouse', label: 'Clubhouse', icon: <MessageSquare className="h-5 w-5" />, href: '/teams' },
   ];
 
   return (
@@ -140,10 +153,14 @@ export const MobileBottomBar: React.FC<{
         {items.map((item) => {
           const isActive = activeTab === item.id;
           return (
-            <button
+            <a
               key={item.id}
-              type="button"
-              onClick={() => onSelectTab(item.id)}
+              href={item.href}
+              onClick={(event) => {
+                event.preventDefault();
+                if (item.id === 'leagues') onSelectLeagueType('All');
+                else onSelectTab(item.id);
+              }}
               style={isActive ? { color: brand.primaryColor } : undefined}
               className={`flex flex-col items-center justify-center gap-0.5 min-h-[44px] transition-colors ${
                 isActive ? '' : 'text-slate-400 hover:text-slate-200'
@@ -153,7 +170,7 @@ export const MobileBottomBar: React.FC<{
               <span className="text-[10px] font-medium tracking-tight whitespace-nowrap">
                 {item.label}
               </span>
-            </button>
+            </a>
           );
         })}
       </div>

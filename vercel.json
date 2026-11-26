@@ -9,6 +9,38 @@
     {
       "source": "/admin",
       "destination": "/"
+    },
+    {
+      "source": "/admin/:path*",
+      "destination": "/"
+    },
+    {
+      "source": "/programs",
+      "destination": "/"
+    },
+    {
+      "source": "/leagues",
+      "destination": "/"
+    },
+    {
+      "source": "/tournaments",
+      "destination": "/"
+    },
+    {
+      "source": "/schedule",
+      "destination": "/"
+    },
+    {
+      "source": "/teams",
+      "destination": "/"
+    },
+    {
+      "source": "/market",
+      "destination": "/"
+    },
+    {
+      "source": "/partnerships",
+      "destination": "/"
     }
   ]
 }
