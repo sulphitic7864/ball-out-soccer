@@ -62,6 +62,11 @@ function uid(prefix: string): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-4)}`;
 }
 
+function markTeamRosterChanged(team: Team, changedAt = new Date().toISOString()): void {
+  team.rosterRevision = (team.rosterRevision ?? 0) + 1;
+  team.rosterChemistrySince = changedAt;
+}
+
 function createSeedDatabase(): LeagueDatabase {
   const brand: BrandConfig = {
     siteName: 'Ball Out Soccer',
@@ -1062,6 +1067,8 @@ export async function createApp() {
       badgeStyle: 'Shield',
       bio: `${teamName.trim()} — Competing in ${league.name}`,
       rosterLimit: league.rosterMaxCap || 11,
+      rosterRevision: 0,
+      rosterChemistrySince: nowIso,
       standbyWaitlist: [],
       splitPayCode,
       splitTargetPlayers: targetPlayers,
@@ -1205,6 +1212,7 @@ export async function createApp() {
       registrationCompletedAt: isPaymentDone ? nowIso : undefined,
     };
     db.players.push(newPlayer);
+    markTeamRosterChanged(team, nowIso);
     saveDatabase(db);
     res.json({
       db,
@@ -1275,6 +1283,7 @@ export async function createApp() {
       return ev.allowed && (t.name.toLowerCase().includes('house') || squad.length < (league.rosterMaxCap || 11));
     });
 
+    const isNewHouseTeam = !houseTeam;
     const nowIso = new Date().toISOString();
     if (!houseTeam) {
       const tid = uid('tm');
@@ -1292,6 +1301,8 @@ export async function createApp() {
         badgeStyle: 'Circle',
         bio: 'Solo Free Agent House Squad',
         rosterLimit: league.rosterMaxCap || 11,
+        rosterRevision: 0,
+        rosterChemistrySince: nowIso,
         standbyWaitlist: [],
         splitPayCode: 'HOUSE' + Math.floor(10 + Math.random() * 89),
         splitTargetPlayers: 10,
@@ -1355,6 +1366,7 @@ export async function createApp() {
       registrationCompletedAt: isPaymentDone ? nowIso : undefined,
     };
     db.players.push(newPlayer);
+    if (!isNewHouseTeam) markTeamRosterChanged(houseTeam, nowIso);
     db.doneDeals.unshift({
       id: uid('dd'),
       leagueId,
@@ -1466,6 +1478,7 @@ export async function createApp() {
       });
     }
 
+    let createdTargetTeam = false;
     if (!targetTeam) {
       const tid = uid('tm');
       targetTeam = {
@@ -1482,6 +1495,8 @@ export async function createApp() {
         badgeStyle: 'Circle',
         bio: 'Free Agent House Squad',
         rosterLimit: league.rosterMaxCap || 11,
+        rosterRevision: 0,
+        rosterChemistrySince: new Date().toISOString(),
         standbyWaitlist: [],
         splitPayCode: 'HOUSE' + Math.floor(10 + Math.random() * 89),
         splitTargetPlayers: 10,
@@ -1489,6 +1504,7 @@ export async function createApp() {
         amountPaid: 0,
         paymentMode: 'split',
       };
+      createdTargetTeam = true;
       db.teams.push(targetTeam);
     }
 
@@ -1563,6 +1579,7 @@ export async function createApp() {
     invite.totalIfAccepted = updatedInviterTotal;
 
     db.players.push(friendPlayer);
+    if (!createdTargetTeam) markTeamRosterChanged(targetTeam, nowIso);
     db.doneDeals.unshift({
       id: uid('dd'),
       leagueId: league.id,
@@ -1712,6 +1729,7 @@ export async function createApp() {
     }
 
     db.players = db.players.filter((p) => p.id !== target.id);
+    markTeamRosterChanged(team);
     const gamesRemaining = db.matches.filter(
       (match) =>
         match.leagueId === league.id &&
@@ -1883,6 +1901,7 @@ export async function createApp() {
       registrationCompletedAt: now,
     };
     db.players.push(player);
+    markTeamRosterChanged(team, now);
     opening.status = 'Filled';
     opening.filledByPlayerId = player.id;
     db.doneDeals.unshift({
@@ -2005,6 +2024,10 @@ export async function createApp() {
     if (invite.invitedPlayerId) {
       const fa = db.players.find((p) => p.id === invite.invitedPlayerId);
       if (fa) {
+        const previousTeam = db.teams.find((entry) => entry.id === fa.teamId);
+        if (previousTeam && previousTeam.id !== team.id) {
+          markTeamRosterChanged(previousTeam, nowIso);
+        }
         fa.teamId = team.id;
         fa.leagueId = league.id;
         fa.isFreeAgent = false;
@@ -2041,6 +2064,7 @@ export async function createApp() {
         waiverSignatureName: invite.invitedName,
       });
     }
+    markTeamRosterChanged(team, nowIso);
 
     invite.status = 'Accepted';
     db.doneDeals.unshift({
@@ -2479,6 +2503,10 @@ export async function createApp() {
           pOut.isCaptain = false;
           pIn.isCaptain = false;
           const nowIso = new Date().toISOString();
+          pOut.joinedTeamAt = nowIso;
+          pIn.joinedTeamAt = nowIso;
+          markTeamRosterChanged(tFrom, nowIso);
+          markTeamRosterChanged(tTo, nowIso);
           pOut.marketListing = null;
           pIn.marketListing = null;
           pOut.lastMarketActionAt = nowIso;
@@ -3059,6 +3087,51 @@ export async function createApp() {
 
     const homeRoster = db.players.filter((p) => p.teamId === match.homeTeamId);
     const awayRoster = db.players.filter((p) => p.teamId === match.awayTeamId);
+    const homePlayedPlayerIds = homeRoster
+      .filter(
+        (player) =>
+          !activeLoans.some(
+            (loan) =>
+              loan.lendingTeamId === player.teamId && loan.loanPlayerIds?.includes(player.id)
+          )
+      )
+      .map((player) => player.id);
+    const awayPlayedPlayerIds = awayRoster
+      .filter(
+        (player) =>
+          !activeLoans.some(
+            (loan) =>
+              loan.lendingTeamId === player.teamId && loan.loanPlayerIds?.includes(player.id)
+          )
+      )
+      .map((player) => player.id);
+
+    for (const playerId of match.loanAppearancePlayerIds) {
+      const loan = activeLoans.find(
+        (entry) =>
+          entry.loanPlayerIds?.includes(playerId) &&
+          (entry.borrowingTeamId === match.homeTeamId ||
+            entry.borrowingTeamId === match.awayTeamId)
+      );
+      if (!loan) continue;
+      const playedIds =
+        loan.borrowingTeamId === match.homeTeamId ? homePlayedPlayerIds : awayPlayedPlayerIds;
+      if (!playedIds.includes(playerId)) playedIds.push(playerId);
+    }
+
+    match.teamPlayedPlayerIds = {
+      [match.homeTeamId]: homePlayedPlayerIds,
+      [match.awayTeamId]: awayPlayedPlayerIds,
+    };
+    match.playedPlayerIds = Array.from(
+      new Set([...homePlayedPlayerIds, ...awayPlayedPlayerIds])
+    );
+    match.rosterRevisionSnapshot = {
+      [match.homeTeamId]:
+        db.teams.find((team) => team.id === match.homeTeamId)?.rosterRevision ?? 0,
+      [match.awayTeamId]:
+        db.teams.find((team) => team.id === match.awayTeamId)?.rosterRevision ?? 0,
+    };
 
     for (const p of [...homeRoster, ...awayRoster]) {
       const lockedOut = activeLoans.some(

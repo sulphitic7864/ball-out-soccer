@@ -16,6 +16,7 @@ import {
   calculateSeasonDurationLabel,
   computeDynamicPrizeDisplay,
   computeMatchClockBreakdown,
+  computeSquadChemistry,
   computeStandings,
   computeTeamOfTheWeek,
   getEffectiveTeamCaps,
@@ -81,6 +82,15 @@ export const LiveLeagueHub: React.FC<LiveLeagueHubProps> = ({
     () => (league ? computeStandings(league.id, db.teams, db.matches) : []),
     [league, db.teams, db.matches]
   );
+  const chemistryByTeam = useMemo(() => {
+    if (!league) return new Map<string, ReturnType<typeof computeSquadChemistry>>();
+    return new Map(
+      standings.map((row) => [
+        row.teamId,
+        computeSquadChemistry(league.id, row.teamId, db.teams, db.players, db.matches),
+      ])
+    );
+  }, [league, standings, db.teams, db.players, db.matches]);
 
   const leagueMatches = useMemo(() => {
     if (!league) return [];
@@ -316,7 +326,7 @@ export const LiveLeagueHub: React.FC<LiveLeagueHubProps> = ({
             <div>
               <h2 className="font-display text-xl font-bold text-white">League Standings</h2>
               <p className="text-xs text-slate-400">
-                Top 4 qualify for Cash-Prize Playoffs. Ranks 8th–10th unlock the Struggling Team Lifeline in the Transfer Market.
+                Top 4 qualify for Cash-Prize Playoffs. Ranks 8th–10th unlock the Struggling Team Lifeline. Squad Chemistry rewards shared matches, returning teammates, strong form, and league position.
               </p>
             </div>
             <button
@@ -382,7 +392,9 @@ export const LiveLeagueHub: React.FC<LiveLeagueHubProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5 text-sm">
-                  {standings.map((row) => (
+                  {standings.map((row) => {
+                    const chemistry = chemistryByTeam.get(row.teamId);
+                    return (
                     <tr key={row.teamId} className="hover:bg-white/[0.03] transition-colors">
                       <td className="py-3 px-4 font-mono-num text-xs font-bold text-slate-400">
                         <span className="inline-flex items-center gap-1">
@@ -398,17 +410,46 @@ export const LiveLeagueHub: React.FC<LiveLeagueHubProps> = ({
                         </span>
                       </td>
                       <td className="py-3 px-4 font-medium text-white whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={() => onOpenClubhouse(row.teamId)}
-                          className="inline-flex items-center gap-2.5 hover:text-emerald-400 cursor-pointer"
-                        >
-                          <span
-                            className="h-2.5 w-2.5 rounded-sm shrink-0"
-                            style={{ backgroundColor: row.kitColor }}
-                          />
-                          <span>{row.teamName}</span>
-                        </button>
+                        <div className="space-y-1.5">
+                          <button
+                            type="button"
+                            onClick={() => onOpenClubhouse(row.teamId)}
+                            className="inline-flex items-center gap-2.5 hover:text-emerald-400 cursor-pointer"
+                          >
+                            <span
+                              className="h-2.5 w-2.5 rounded-sm shrink-0"
+                              style={{ backgroundColor: row.kitColor }}
+                            />
+                            <span>{row.teamName}</span>
+                          </button>
+                          <div
+                            className="flex items-center gap-2"
+                            title="Chemistry blends current-roster match continuity, returning teammates from prior seasons, unbeaten and defensive form, and league position."
+                          >
+                            <span className="text-[10px] font-medium text-slate-400">
+                              Chemistry {chemistry?.percentage ?? 20}%
+                            </span>
+                            <span
+                              role="progressbar"
+                              aria-label={`${row.teamName} squad chemistry`}
+                              aria-valuemin={0}
+                              aria-valuemax={100}
+                              aria-valuenow={chemistry?.percentage ?? 20}
+                              className="h-1.5 w-16 overflow-hidden rounded-full bg-white/10"
+                            >
+                              <span
+                                className="block h-full rounded-full bg-emerald-400"
+                                style={{ width: `${chemistry?.percentage ?? 20}%` }}
+                              />
+                            </span>
+                            {chemistry?.coreDynasty && (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-300">
+                                <Shield className="h-3 w-3" />
+                                Core Dynasty
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </td>
                       <td className="py-3 px-3 text-right font-mono-num text-slate-300">{row.gp}</td>
                       <td className="py-3 px-3 text-right font-mono-num text-slate-300">{row.w}</td>
@@ -451,7 +492,8 @@ export const LiveLeagueHub: React.FC<LiveLeagueHubProps> = ({
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

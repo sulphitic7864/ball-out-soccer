@@ -107,6 +107,8 @@ export interface Team {
   badgeUrl?: string;
   bio?: string;
   rosterLimit: number;
+  rosterRevision?: number;
+  rosterChemistrySince?: string;
   customMaleCap?: number;
   customFemaleCap?: number;
   autoFlippedCoEd?: boolean;
@@ -207,6 +209,9 @@ export interface Match {
   awayScore: number | null;
   events: MatchEvent[];
   loanAppearancePlayerIds: string[];
+  playedPlayerIds?: string[];
+  teamPlayedPlayerIds?: Record<string, string[]>;
+  rosterRevisionSnapshot?: Record<string, number>;
   hypeCount?: number;
   hypeUpdatedAt?: string;
   matchOfNight?: boolean;

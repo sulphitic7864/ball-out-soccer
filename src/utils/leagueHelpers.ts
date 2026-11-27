@@ -238,6 +238,184 @@ export function computeStandings(
   });
 }
 
+export interface SquadChemistryResult {
+  percentage: number;
+  coreDynasty: boolean;
+  coreMatchesPlayedTogether: number;
+  returningTeammateMatches: number;
+  rankBonus: number;
+  formBonus: number;
+}
+
+export function computeSquadChemistry(
+  leagueId: string,
+  teamId: string,
+  teams: Team[],
+  players: Player[],
+  matches: Match[]
+): SquadChemistryResult {
+  const team = teams.find((entry) => entry.id === teamId && entry.leagueId === leagueId);
+  const roster = players.filter((player) => player.teamId === teamId && player.leagueId === leagueId);
+  const emptyResult: SquadChemistryResult = {
+    percentage: 20,
+    coreDynasty: false,
+    coreMatchesPlayedTogether: 0,
+    returningTeammateMatches: 0,
+    rankBonus: 0,
+    formBonus: 0,
+  };
+  if (!team || roster.length === 0) return emptyResult;
+
+  const playerById = new Map(players.map((player) => [player.id, player]));
+  const stableKey = (player: Player | undefined): string | null => {
+    if (!player) return null;
+    const email = player.email?.trim().toLowerCase();
+    return email ? `email:${email}` : `player:${player.id}`;
+  };
+  const rosterKeys = Array.from(new Set(roster.map((player) => stableKey(player)).filter(Boolean))) as string[];
+  const rosterKeySet = new Set(rosterKeys);
+  const pairKeys: string[] = [];
+  for (let i = 0; i < rosterKeys.length; i += 1) {
+    for (let j = i + 1; j < rosterKeys.length; j += 1) {
+      pairKeys.push(JSON.stringify([rosterKeys[i], rosterKeys[j]].sort()));
+    }
+  }
+
+  const finalRegularMatches = matches.filter(
+    (match) =>
+      (match.stage === 'Regular' || match.stage === 'Group') &&
+      match.status === 'Final' &&
+      match.homeScore !== null &&
+      match.awayScore !== null
+  );
+  const currentMatches = finalRegularMatches.filter(
+    (match) =>
+      match.leagueId === leagueId &&
+      (match.homeTeamId === teamId || match.awayTeamId === teamId)
+  );
+  const latestJoinedAt = roster.reduce((latest, player) => {
+    const joinedAt = Date.parse(player.joinedTeamAt);
+    return Number.isFinite(joinedAt) ? Math.max(latest, joinedAt) : latest;
+  }, Number.NEGATIVE_INFINITY);
+  const chemistrySince = Date.parse(team.rosterChemistrySince || '');
+  const currentRosterSince = Number.isFinite(chemistrySince) ? chemistrySince : latestJoinedAt;
+
+  const matchKeysForTeam = (match: Match, matchTeamId: string, useCurrentRosterFallback: boolean): string[] => {
+    let playerIds = match.teamPlayedPlayerIds?.[matchTeamId];
+    if (!playerIds && match.playedPlayerIds) {
+      playerIds = match.playedPlayerIds.filter((playerId) => {
+        const player = playerById.get(playerId);
+        return player?.leagueId === match.leagueId && player.teamId === matchTeamId;
+      });
+    }
+    if (playerIds) {
+      return Array.from(
+        new Set(playerIds.map((playerId) => stableKey(playerById.get(playerId))).filter(Boolean) as string[])
+      );
+    }
+    if (useCurrentRosterFallback) return rosterKeys;
+
+    const matchDate = Date.parse(match.scheduledDate);
+    return Array.from(
+      new Set(
+        players
+          .filter((player) => {
+            if (player.leagueId !== match.leagueId || player.teamId !== matchTeamId) return false;
+            const joinedAt = Date.parse(player.joinedTeamAt);
+            return !Number.isFinite(matchDate) || !Number.isFinite(joinedAt) || joinedAt <= matchDate;
+          })
+          .map((player) => stableKey(player))
+          .filter(Boolean) as string[]
+      )
+    );
+  };
+
+  const currentPairCounts = new Map(pairKeys.map((key) => [key, 0]));
+  let matchesInCurrentRosterRevision = 0;
+  for (const match of currentMatches) {
+    const snapshotRevision = match.rosterRevisionSnapshot?.[teamId];
+    const matchDate = Date.parse(match.scheduledDate);
+    const sameRosterRevision =
+      snapshotRevision !== undefined
+        ? snapshotRevision === (team.rosterRevision ?? 0)
+        : !Number.isFinite(currentRosterSince) ||
+          (Number.isFinite(matchDate) && matchDate >= currentRosterSince);
+    if (!sameRosterRevision) continue;
+    matchesInCurrentRosterRevision += 1;
+    const keys = matchKeysForTeam(match, teamId, true).filter((key) => rosterKeySet.has(key));
+    for (let i = 0; i < keys.length; i += 1) {
+      for (let j = i + 1; j < keys.length; j += 1) {
+        const key = JSON.stringify([keys[i], keys[j]].sort());
+        if (currentPairCounts.has(key)) currentPairCounts.set(key, (currentPairCounts.get(key) || 0) + 1);
+      }
+    }
+  }
+
+  const historicalPairCounts = new Map(pairKeys.map((key) => [key, 0]));
+  for (const match of finalRegularMatches) {
+    if (match.leagueId === leagueId) continue;
+    for (const matchTeamId of [match.homeTeamId, match.awayTeamId]) {
+      const keys = matchKeysForTeam(match, matchTeamId, false).filter((key) => rosterKeySet.has(key));
+      for (let i = 0; i < keys.length; i += 1) {
+        for (let j = i + 1; j < keys.length; j += 1) {
+          const key = JSON.stringify([keys[i], keys[j]].sort());
+          if (historicalPairCounts.has(key)) {
+            historicalPairCounts.set(key, (historicalPairCounts.get(key) || 0) + 1);
+          }
+        }
+      }
+    }
+  }
+
+  const continuityRate = pairKeys.length
+    ? pairKeys.reduce(
+        (sum, key) => sum + Math.min(currentPairCounts.get(key) || 0, 8) / 8,
+        0
+      ) / pairKeys.length
+    : Math.min(matchesInCurrentRosterRevision, 8) / 8;
+  const legacyRate = pairKeys.length
+    ? pairKeys.reduce(
+        (sum, key) => sum + Math.min(historicalPairCounts.get(key) || 0, 5) / 5,
+        0
+      ) / pairKeys.length
+    : 0;
+  const returningPairs = pairKeys.filter((key) => (historicalPairCounts.get(key) || 0) > 0).length;
+  const returningBonus = Math.min(10, returningPairs * 3);
+  const returningTeammateMatches = Array.from(historicalPairCounts.values()).reduce(
+    (sum, count) => sum + count,
+    0
+  );
+
+  const standings = computeStandings(leagueId, teams, matches);
+  const teamStanding = standings.find((row) => row.teamId === teamId);
+  const teamCount = teams.filter((entry) => entry.leagueId === leagueId).length;
+  const rankRate =
+    teamCount <= 1 || !teamStanding ? 0 : (teamCount - teamStanding.rank) / (teamCount - 1);
+  const rankBonus = Math.round(Math.max(0, Math.min(1, rankRate)) * 15);
+  const formBonus = teamStanding && teamStanding.gp > 0
+    ? (teamStanding.l === 0 ? 10 : 0) +
+      (teamStanding.ga === 0 ? 15 : 0) +
+      (teamStanding.l === 0 && teamStanding.ga === 0 ? 10 : 0)
+    : 0;
+  const percentage = Math.min(
+    100,
+    Math.round(20 + continuityRate * 40 + legacyRate * 20 + returningBonus + rankBonus + formBonus)
+  );
+  const coreMatchesPlayedTogether =
+    pairKeys.length > 0
+      ? Math.min(...Array.from(currentPairCounts.values()))
+      : matchesInCurrentRosterRevision;
+
+  return {
+    percentage,
+    coreDynasty: percentage >= 80 && matchesInCurrentRosterRevision >= 3,
+    coreMatchesPlayedTogether,
+    returningTeammateMatches,
+    rankBonus,
+    formBonus,
+  };
+}
+
 export function computeDynamicPrizeDisplay(
   league: League,
   teamCount: number
