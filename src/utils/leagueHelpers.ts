@@ -12,6 +12,7 @@ import type {
 
 export const MARKET_COOLDOWN_HOURS = 72;
 export const LIFELINE_COOLDOWN_HOURS = 72;
+export const MATCH_OF_NIGHT_HYPE_THRESHOLD = 10;
 
 export function calculateSeasonDurationLabel(
   gameWeeks: number,

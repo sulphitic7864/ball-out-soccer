@@ -19,6 +19,7 @@ import {
   Trash2,
   UserPlus,
   Calendar,
+  Trophy,
 } from 'lucide-react';
 import type { LeagueDatabase, Player, RideRequest } from '../types.ts';
 import {
@@ -58,7 +59,7 @@ export const Clubhouse: React.FC<ClubhouseProps> = ({
   onOpenAdmin,
   onDatabaseUpdate,
 }) => {
-  const [subTab, setSubTab] = useState<'locker' | 'opponent' | 'rides' | 'roster' | 'studio'>('locker');
+  const [subTab, setSubTab] = useState<'locker' | 'press' | 'honors' | 'opponent' | 'rides' | 'roster' | 'studio'>('locker');
   const [copied, setCopied] = useState(false);
   const [cardModalPlayer, setCardModalPlayer] = useState<Player | null>(null);
   const [inviteName, setInviteName] = useState('');
@@ -74,6 +75,7 @@ export const Clubhouse: React.FC<ClubhouseProps> = ({
   const [dmText, setDmText] = useState('');
   const [pollQuestion, setPollQuestion] = useState('');
   const [pollOptionsText, setPollOptionsText] = useState('Yes, bring ball, Need backup');
+  const [pressStatement, setPressStatement] = useState('');
 
   // Opponent Lobby states
   const [selectedLobbyMatchId, setSelectedLobbyMatchId] = useState('');
@@ -165,18 +167,29 @@ export const Clubhouse: React.FC<ClubhouseProps> = ({
     );
   }
 
-  const nextMatch = db.matches.find(
-    (m) =>
-      m.leagueId === league.id &&
-      m.status === 'Scheduled' &&
-      (m.homeTeamId === team.id || m.awayTeamId === team.id)
-  );
-  const lastFinalMatch = db.matches.find(
-    (m) =>
-      m.leagueId === league.id &&
-      m.status === 'Final' &&
-      (m.homeTeamId === team.id || m.awayTeamId === team.id)
-  );
+  const nextMatch = db.matches
+    .filter(
+      (m) =>
+        m.leagueId === league.id &&
+        m.status === 'Scheduled' &&
+        (m.homeTeamId === team.id || m.awayTeamId === team.id)
+    )
+    .sort((a, b) => new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime())[0];
+  const lastFinalMatch = db.matches
+    .filter(
+      (m) =>
+        m.leagueId === league.id &&
+        m.status === 'Final' &&
+        (m.homeTeamId === team.id || m.awayTeamId === team.id)
+    )
+    .sort((a, b) => new Date(b.scheduledDate).getTime() - new Date(a.scheduledDate).getTime())[0];
+  const rsvpOpensAt = lastFinalMatch ? new Date(lastFinalMatch.scheduledDate) : null;
+  if (rsvpOpensAt) {
+    rsvpOpensAt.setDate(rsvpOpensAt.getDate() + 1);
+    rsvpOpensAt.setHours(0, 0, 0, 0);
+  }
+  const rsvpOpen =
+    !rsvpOpensAt || Number.isNaN(rsvpOpensAt.getTime()) || Date.now() >= rsvpOpensAt.getTime();
 
   const opponentTeamId =
     nextMatch?.homeTeamId === team.id ? nextMatch?.awayTeamId : nextMatch?.homeTeamId;
@@ -230,7 +243,7 @@ export const Clubhouse: React.FC<ClubhouseProps> = ({
   };
 
   const handleRsvp = async (status: 'IN' | 'OUT' | 'MAYBE') => {
-    if (!nextMatch) return;
+    if (!nextMatch || !rsvpOpen) return;
     const res = await fetch('/api/clubhouse/rsvp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -445,6 +458,8 @@ export const Clubhouse: React.FC<ClubhouseProps> = ({
         <div className="flex items-center gap-2 overflow-x-auto pt-2 border-t border-white/10">
           {[
             { id: 'locker' as const, label: 'Locker Room & RSVP', icon: <MessageSquare className="h-4 w-4" /> },
+            { id: 'press' as const, label: 'Post-Match Press', icon: <Award className="h-4 w-4" /> },
+            { id: 'honors' as const, label: 'Board & Badges', icon: <Sparkles className="h-4 w-4" /> },
             { id: 'opponent' as const, label: 'Opponent Match Lobby', icon: <Shield className="h-4 w-4" /> },
             { id: 'rides' as const, label: `Ride Hub (${db.rides.length})`, icon: <Car className="h-4 w-4" /> },
             { id: 'roster' as const, label: 'Roster, Invites & Split-Pay', icon: <Users className="h-4 w-4" /> },
@@ -518,29 +533,35 @@ export const Clubhouse: React.FC<ClubhouseProps> = ({
                     <span className="font-semibold text-white">1-Tap Game Day RSVP</span>
                     <span className="font-mono-num text-emerald-400">{inCount} Marked IN</span>
                   </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(['IN', 'MAYBE', 'OUT'] as const).map((st) => {
-                      const current = matchRsvps.find((r) => r.playerId === actingPlayer.id)?.status;
-                      return (
-                        <button
-                          key={st}
-                          type="button"
-                          onClick={() => handleRsvp(st)}
-                          className={`min-h-[42px] rounded-lg border text-xs font-bold cursor-pointer ${
-                            current === st
-                              ? st === 'IN'
-                                ? 'border-emerald-500 bg-emerald-500 text-slate-950'
-                                : st === 'MAYBE'
-                                ? 'border-amber-400 bg-amber-400 text-slate-950'
-                                : 'border-rose-500 bg-rose-500 text-white'
-                              : 'border-white/15 bg-[#090D12] text-slate-300 hover:bg-white/5'
-                          }`}
-                        >
-                          {st}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  {rsvpOpen ? (
+                    <div className="grid grid-cols-3 gap-2">
+                      {(['IN', 'MAYBE', 'OUT'] as const).map((st) => {
+                        const current = matchRsvps.find((r) => r.playerId === actingPlayer.id)?.status;
+                        return (
+                          <button
+                            key={st}
+                            type="button"
+                            onClick={() => handleRsvp(st)}
+                            className={`min-h-[42px] rounded-lg border text-xs font-bold cursor-pointer ${
+                              current === st
+                                ? st === 'IN'
+                                  ? 'border-emerald-500 bg-emerald-500 text-slate-950'
+                                  : st === 'MAYBE'
+                                  ? 'border-amber-400 bg-amber-400 text-slate-950'
+                                  : 'border-rose-500 bg-rose-500 text-white'
+                                : 'border-white/15 bg-[#090D12] text-slate-300 hover:bg-white/5'
+                            }`}
+                          >
+                            {st}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="rounded-lg border border-white/10 bg-[#090D12] px-3 py-2 text-xs text-slate-400">
+                      Match check-in opens {rsvpOpensAt?.toLocaleDateString()} — the day after your previous game.
+                    </p>
+                  )}
                 </div>
 
                 {/* Low Attendance Captain Warning */}
@@ -786,6 +807,292 @@ export const Clubhouse: React.FC<ClubhouseProps> = ({
           </div>
         </div>
       )}
+
+      {subTab === 'press' && (
+        <div className="space-y-5">
+          {!lastFinalMatch ? (
+            <div className="rounded-2xl border border-white/10 bg-[#111821] p-8 text-center text-sm text-slate-400">
+              Captain statements and player reactions will appear after your first completed match.
+            </div>
+          ) : (
+            <>
+              <div className="rounded-2xl border border-white/10 bg-[#111821] p-5 space-y-4">
+                <div>
+                  <div className="text-xs font-semibold text-emerald-400">FULL-TIME PRESS CONFERENCE</div>
+                  <h2 className="mt-1 font-display text-xl font-bold text-white">
+                    {lastFinalMatch.homeTeamName} {lastFinalMatch.homeScore} – {lastFinalMatch.awayScore} {lastFinalMatch.awayTeamName}
+                  </h2>
+                  <p className="text-xs text-slate-400">{lastFinalMatch.scheduledDate}</p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  {[lastFinalMatch.homeTeamId, lastFinalMatch.awayTeamId].map((matchTeamId) => {
+                    const teamPress = (db.pressConferences || []).find(
+                      (press) => press.matchId === lastFinalMatch.id && press.teamId === matchTeamId
+                    );
+                    const matchTeam = db.teams.find((entry) => entry.id === matchTeamId);
+                    return (
+                      <div key={matchTeamId} className="rounded-xl border border-white/10 bg-[#090D12] p-4">
+                        <div className="text-xs font-semibold text-white">{matchTeam?.name || 'Team'}</div>
+                        {teamPress ? (
+                          <blockquote className="mt-2 text-sm text-slate-300">
+                            “{teamPress.statement}”
+                            <footer className="mt-2 text-[11px] text-slate-500">— {teamPress.captainName}, Captain</footer>
+                          </blockquote>
+                        ) : (
+                          <p className="mt-2 text-xs text-slate-500">No captain statement yet.</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {actingPlayer.isCaptain && (
+                  <form
+                    onSubmit={async (event) => {
+                      event.preventDefault();
+                      try {
+                        const response = await fetch(`/api/matches/${lastFinalMatch.id}/press-conference`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            teamId: team.id,
+                            captainId: actingPlayer.id,
+                            statement: pressStatement,
+                          }),
+                        });
+                        const data = await response.json();
+                        if (!response.ok) throw new Error(data.error || 'Could not post statement.');
+                        onDatabaseUpdate(data);
+                        setStatusFeedback('Your post-match statement is published.');
+                      } catch (error) {
+                        setStatusFeedback(error instanceof Error ? error.message : 'Could not post statement.');
+                      }
+                    }}
+                    className="space-y-2"
+                  >
+                    <label className="block text-xs font-semibold text-white" htmlFor="press-statement">
+                      Your captain’s statement
+                    </label>
+                    <textarea
+                      id="press-statement"
+                      maxLength={500}
+                      required
+                      value={
+                        pressStatement ||
+                        (db.pressConferences || []).find(
+                          (press) => press.matchId === lastFinalMatch.id && press.teamId === team.id
+                        )?.statement ||
+                        ''
+                      }
+                      onChange={(event) => setPressStatement(event.target.value)}
+                      placeholder="How did your team feel about the match?"
+                      className="min-h-24 w-full rounded-lg border border-white/15 bg-[#090D12] p-3 text-sm text-white"
+                    />
+                    <button
+                      type="submit"
+                      className="rounded-lg bg-emerald-500 px-4 py-2 text-xs font-bold text-slate-950"
+                    >
+                      Publish / Update Statement
+                    </button>
+                  </form>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-[#111821] p-5">
+                <h3 className="font-display text-lg font-bold text-white">Player Reactions</h3>
+                <p className="mt-1 text-xs text-slate-400">Players from either team can react to the post-match press.</p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {(['🔥', '👏', '💪', '😮', '❤️'] as const).map((emoji) => {
+                    const reactions = (db.matchReactions || []).filter(
+                      (reaction) => reaction.matchId === lastFinalMatch.id && reaction.emoji === emoji
+                    );
+                    const current = reactions.some((reaction) => reaction.playerId === actingPlayer.id);
+                    return (
+                      <button
+                        key={emoji}
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const response = await fetch(`/api/matches/${lastFinalMatch.id}/reactions`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ playerId: actingPlayer.id, emoji }),
+                            });
+                            const data = await response.json();
+                            if (!response.ok) throw new Error(data.error || 'Could not save reaction.');
+                            onDatabaseUpdate(data);
+                          } catch (error) {
+                            setStatusFeedback(error instanceof Error ? error.message : 'Could not save reaction.');
+                          }
+                        }}
+                        className={`rounded-lg border px-3 py-2 text-sm ${
+                          current ? 'border-amber-400 bg-amber-400/15' : 'border-white/10 bg-[#090D12]'
+                        }`}
+                        aria-label={`React ${emoji}, ${reactions.length} reactions`}
+                      >
+                        {emoji} {reactions.length}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {subTab === 'honors' && (() => {
+        const unclaimedFinal =
+          lastFinalMatch &&
+          !(db.teamAchievements || []).some(
+            (achievement) =>
+              achievement.teamId === team.id && achievement.matchId === lastFinalMatch.id
+          );
+        const objectiveMatch = unclaimedFinal ? lastFinalMatch : nextMatch || lastFinalMatch;
+        const standingsBeforeMatch = objectiveMatch
+          ? computeStandings(
+              league.id,
+              db.teams,
+              db.matches.filter((match) => match.id !== objectiveMatch.id)
+            )
+          : standings;
+        const objectiveRank = standingsBeforeMatch.find((row) => row.teamId === team.id)?.rank ?? 99;
+        const teamScore = objectiveMatch
+          ? objectiveMatch.homeTeamId === team.id
+            ? objectiveMatch.homeScore ?? 0
+            : objectiveMatch.awayScore ?? 0
+          : 0;
+        const opponentScore = objectiveMatch
+          ? objectiveMatch.homeTeamId === team.id
+            ? objectiveMatch.awayScore ?? 0
+            : objectiveMatch.homeScore ?? 0
+          : 0;
+        const objectiveMet =
+          objectiveMatch?.status === 'Final' &&
+          (objectiveRank <= 3
+            ? teamScore > opponentScore
+            : objectiveRank >= 8
+              ? teamScore >= 1
+              : teamScore >= opponentScore);
+        const existingAchievement = objectiveMatch
+          ? (db.teamAchievements || []).find(
+              (achievement) =>
+                achievement.teamId === team.id && achievement.matchId === objectiveMatch.id
+            )
+          : undefined;
+        const objectiveTitle =
+          objectiveRank <= 3
+            ? 'Champions Standard'
+            : objectiveRank >= 8
+              ? 'Climb the Table'
+              : 'Build Momentum';
+        const objectiveDescription =
+          objectiveRank <= 3
+            ? 'Win your match to maintain the top-three standard.'
+            : objectiveRank >= 8
+              ? 'Score at least one goal to start climbing the table.'
+              : 'Earn at least one point with a draw or win.';
+        const finalRank = standings.find((row) => row.teamId === team.id)?.rank;
+        const milestoneGames = [1, 10, 20, 30, 40, 50];
+        return (
+          <div className="space-y-5">
+            <div className="rounded-2xl border border-emerald-500/25 bg-[#111821] p-5 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-emerald-300">
+                    {team.name} Board Objective
+                  </div>
+                  <h2 className="mt-1 font-display text-xl font-bold text-white">{objectiveTitle}</h2>
+                  <p className="mt-1 text-sm text-slate-300">{objectiveDescription}</p>
+                </div>
+                {league.status === 'COMPLETED' && finalRank && finalRank <= 3 && (
+                  <Trophy className={`h-7 w-7 ${finalRank === 1 ? 'text-amber-300' : finalRank === 2 ? 'text-slate-300' : 'text-orange-400'}`} />
+                )}
+              </div>
+              {objectiveMatch ? (
+                <>
+                  <div className="text-xs text-slate-400">
+                    {objectiveMatch.homeTeamName} {objectiveMatch.status === 'Final' ? `${objectiveMatch.homeScore} – ${objectiveMatch.awayScore}` : 'vs'} {objectiveMatch.awayTeamName}
+                    {' · '}Rank-based difficulty: #{objectiveRank}
+                  </div>
+                  {existingAchievement ? (
+                    <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs font-semibold text-amber-200">
+                      Badge earned: {existingAchievement.badge} · {existingAchievement.points} points
+                    </div>
+                  ) : objectiveMet ? (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const response = await fetch(`/api/teams/${team.id}/objectives/claim`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ matchId: objectiveMatch.id, playerId: actingPlayer.id }),
+                          });
+                          const data = await response.json();
+                          if (!response.ok) throw new Error(data.error || 'Could not claim objective.');
+                          onDatabaseUpdate(data);
+                          setStatusFeedback('Board objective completed — team badge and 50 points awarded.');
+                        } catch (error) {
+                          setStatusFeedback(error instanceof Error ? error.message : 'Could not claim objective.');
+                        }
+                      }}
+                      className="rounded-lg bg-emerald-500 px-4 py-2 text-xs font-bold text-slate-950"
+                    >
+                      Complete Objective &amp; Claim Badge
+                    </button>
+                  ) : (
+                    <div className="text-xs text-slate-400">
+                      {objectiveMatch.status === 'Final'
+                        ? 'Objective not achieved this match. The next board challenge will adapt to your standing.'
+                        : 'Objective progress is recorded when the match result is final.'}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-xs text-slate-400">Your next board objective will appear when the schedule is published.</p>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-[#111821] p-5 space-y-4">
+              <h3 className="font-display text-lg font-bold text-white">Player Milestone Badges</h3>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {roster.map((player) => {
+                  const earnedMilestones = milestoneGames.filter((games) => player.gamesPlayed >= games);
+                  return (
+                    <div key={player.id} className="rounded-xl border border-white/10 bg-[#090D12] p-4">
+                      <div className="font-semibold text-white">{player.name}</div>
+                      <div className="mt-1 text-xs text-slate-400">{player.gamesPlayed} games played</div>
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {earnedMilestones.length ? earnedMilestones.map((games) => (
+                          <span key={games} className="rounded bg-amber-400/10 px-2 py-1 text-[10px] font-semibold text-amber-200">
+                            {games === 1 ? 'First Game' : `${games} Games`}
+                          </span>
+                        )) : (
+                          <span className="text-[10px] text-slate-500">First-game badge is next</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {(db.teamAchievements || []).filter((achievement) => achievement.teamId === team.id).length > 0 && (
+                <div className="border-t border-white/10 pt-4">
+                  <h4 className="text-xs font-semibold text-white">Team Reward Badges</h4>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {(db.teamAchievements || [])
+                      .filter((achievement) => achievement.teamId === team.id)
+                      .map((achievement) => (
+                        <span key={achievement.id} className="rounded-lg border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
+                          {achievement.badge} · {achievement.points} pts
+                        </span>
+                      ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* TAB 2: OPPONENT MATCHDAY CHAT ("PRE-GAME LOBBY") */}
       {subTab === 'opponent' && (
@@ -1409,7 +1716,12 @@ export const Clubhouse: React.FC<ClubhouseProps> = ({
                         {!p.isCaptain && (
                           <button
                             type="button"
-                            title="Drop player & auto-promote Standby waitlist"
+                            disabled={p.gamesPlayed > 0}
+                            title={
+                              p.gamesPlayed > 0
+                                ? 'Only players who have not played this season can be released.'
+                                : 'Release inactive player; auto-promote standby or open a replacement spot when 6+ games remain.'
+                            }
                             onClick={async () => {
                               const r = await fetch(`/api/teams/${team.id}/roster/${p.id}`, {
                                 method: 'DELETE',
@@ -1420,13 +1732,15 @@ export const Clubhouse: React.FC<ClubhouseProps> = ({
                                 setStatusFeedback(
                                   data.promotedName
                                     ? `${p.name} removed. ${data.promotedName} auto-promoted from Standby Waitlist!`
+                                    : data.opening
+                                    ? `${p.name} removed. A paid replacement spot is open at the standard $${data.opening.fee} solo fee.`
                                     : `${p.name} removed from roster.`
                                 );
                               } else {
                                 setStatusFeedback(data.error || 'Could not remove player');
                               }
                             }}
-                            className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-1.5 text-rose-300 hover:bg-rose-500/20 cursor-pointer"
+                            className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-1.5 text-rose-300 hover:bg-rose-500/20 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>

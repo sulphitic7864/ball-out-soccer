@@ -164,6 +164,8 @@ export const AdminRefDashboard: React.FC<AdminRefDashboardProps> = ({
   const [showNewLeagueForm, setShowNewLeagueForm] = useState(false);
   const [newLeagueName, setNewLeagueName] = useState('');
   const [newLeagueCity, setNewLeagueCity] = useState('');
+  const [newLeagueRegion, setNewLeagueRegion] = useState('');
+  const [newLeagueCountry, setNewLeagueCountry] = useState('');
   const [newLeagueVenueName, setNewLeagueVenueName] = useState('');
   const [newLeagueVenueAddress, setNewLeagueVenueAddress] = useState('');
   const [newLeagueIndoorOutdoor, setNewLeagueIndoorOutdoor] = useState<Venue['indoorOutdoor']>('Outdoor Turf');
@@ -472,6 +474,8 @@ export const AdminRefDashboard: React.FC<AdminRefDashboardProps> = ({
       [lg.id]: {
         name: lg.name,
         city: lg.city || ven?.city || '',
+        region: lg.region || ven?.region || '',
+        country: lg.country || ven?.country || '',
         venueName: ven?.name || lg.locationName.split('·').pop()?.trim() || '',
         venueAddress: ven?.address || '',
         indoorOutdoor: ven?.indoorOutdoor || 'Outdoor Turf',
@@ -492,6 +496,7 @@ export const AdminRefDashboard: React.FC<AdminRefDashboardProps> = ({
         gameDurationMins: lg.gameDurationMins,
         playoffMinGames: lg.playoffMinGames,
         transferDeadlineWeek: lg.transferDeadlineWeek,
+        transferExtensionWeeks: lg.transferExtensionWeeks ?? 2,
         startDate: lg.startDate,
         matchTimeWindow: lg.matchTimeWindow || '7:00 PM – 10:00 PM',
         customPrizeText: lg.customPrizeText,
@@ -1030,6 +1035,8 @@ export const AdminRefDashboard: React.FC<AdminRefDashboardProps> = ({
                     body: JSON.stringify({
                       name: newLeagueName,
                       city: newLeagueCity,
+                      region: newLeagueRegion,
+                      country: newLeagueCountry,
                       venueName: newLeagueVenueName,
                       venueAddress: newLeagueVenueAddress,
                       indoorOutdoor: newLeagueIndoorOutdoor,
@@ -1110,6 +1117,26 @@ export const AdminRefDashboard: React.FC<AdminRefDashboardProps> = ({
                         placeholder="Type City (e.g. Toronto, Ottawa, Etobicoke)"
                         value={newLeagueCity}
                         onChange={(e) => setNewLeagueCity(e.target.value)}
+                        className="w-full rounded-lg border border-white/15 bg-[#111821] px-3 py-2 text-xs text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-400 mb-1">Province / State</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Ontario, Alberta, New York"
+                        value={newLeagueRegion}
+                        onChange={(e) => setNewLeagueRegion(e.target.value)}
+                        className="w-full rounded-lg border border-white/15 bg-[#111821] px-3 py-2 text-xs text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-400 mb-1">Country</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Canada"
+                        value={newLeagueCountry}
+                        onChange={(e) => setNewLeagueCountry(e.target.value)}
                         className="w-full rounded-lg border border-white/15 bg-[#111821] px-3 py-2 text-xs text-white"
                       />
                     </div>
@@ -1586,6 +1613,7 @@ export const AdminRefDashboard: React.FC<AdminRefDashboardProps> = ({
                             gameDurationMins: Number(draft.gameDurationMins),
                             playoffMinGames: Number(draft.playoffMinGames),
                             transferDeadlineWeek: Number(draft.transferDeadlineWeek),
+                            transferExtensionWeeks: Math.max(0, Number(draft.transferExtensionWeeks)),
                             rosterMaxCap: Number(draft.rosterMaxCap),
                             coedMaleCap: Number(draft.coedMaleCap),
                             coedFemaleCap: Number(draft.coedFemaleCap),
@@ -1638,6 +1666,24 @@ export const AdminRefDashboard: React.FC<AdminRefDashboardProps> = ({
                               type="text"
                               value={String(draft.city ?? '')}
                               onChange={(e) => updateLeagueDraftField(lg.id, 'city', e.target.value)}
+                              className="w-full rounded-lg border border-white/15 bg-[#111821] px-3 py-1.5 text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] text-amber-300 mb-1">Province / State</label>
+                            <input
+                              type="text"
+                              value={String(draft.region ?? '')}
+                              onChange={(e) => updateLeagueDraftField(lg.id, 'region', e.target.value)}
+                              className="w-full rounded-lg border border-white/15 bg-[#111821] px-3 py-1.5 text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] text-amber-300 mb-1">Country</label>
+                            <input
+                              type="text"
+                              value={String(draft.country ?? '')}
+                              onChange={(e) => updateLeagueDraftField(lg.id, 'country', e.target.value)}
                               className="w-full rounded-lg border border-white/15 bg-[#111821] px-3 py-1.5 text-white"
                             />
                           </div>
@@ -1848,7 +1894,27 @@ export const AdminRefDashboard: React.FC<AdminRefDashboardProps> = ({
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                          <div>
+                            <label className="block text-[10px] text-slate-400 mb-1">Transfer Window Ends (Week)</label>
+                            <input
+                              type="number"
+                              min={1}
+                              value={Number(draft.transferDeadlineWeek ?? 1)}
+                              onChange={(e) => updateLeagueDraftField(lg.id, 'transferDeadlineWeek', Number(e.target.value))}
+                              className="w-full rounded-lg border border-white/15 bg-[#111821] px-3 py-1.5 text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] text-slate-400 mb-1">Rank 8th–10th Extension (Weeks)</label>
+                            <input
+                              type="number"
+                              min={0}
+                              value={Number(draft.transferExtensionWeeks ?? 2)}
+                              onChange={(e) => updateLeagueDraftField(lg.id, 'transferExtensionWeeks', Number(e.target.value))}
+                              className="w-full rounded-lg border border-white/15 bg-[#111821] px-3 py-1.5 text-white"
+                            />
+                          </div>
                           <div>
                             <label className="block text-[10px] text-slate-400 mb-1">Kickoff Date</label>
                             <input

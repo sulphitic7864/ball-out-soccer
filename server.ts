@@ -12,6 +12,8 @@ import type {
   LeagueDatabase,
   Match,
   MatchEvent,
+  MatchPressConference,
+  MatchReaction,
   Partner,
   Player,
   PromoCode,
@@ -19,7 +21,9 @@ import type {
   StaffMember,
   SubRequest,
   Team,
+  TeamAchievement,
   TeamInvite,
+  TeamRosterOpening,
   TransferOrLoanRequest,
   Venue,
 } from './src/types.ts';
@@ -28,6 +32,7 @@ import {
   computeChampionsCupSeeds,
   evaluateTeamRosterAddition,
   generateAutoScaledCupMatches,
+  MATCH_OF_NIGHT_HYPE_THRESHOLD,
 } from './src/utils/leagueHelpers.ts';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -125,6 +130,10 @@ function createSeedDatabase(): LeagueDatabase {
   const opponentMessages: LeagueDatabase['opponentMessages'] = [];
   const subRequests: SubRequest[] = [];
   const motmVotes: LeagueDatabase['motmVotes'] = [];
+  const rosterOpenings: TeamRosterOpening[] = [];
+  const pressConferences: MatchPressConference[] = [];
+  const matchReactions: MatchReaction[] = [];
+  const teamAchievements: TeamAchievement[] = [];
 
   const championsCup: ChampionsCupConfig = {
     id: 'cup_coed_2026',
@@ -169,6 +178,10 @@ function createSeedDatabase(): LeagueDatabase {
     championsCup,
     teamInvites,
     freeAgentInvites,
+    rosterOpenings,
+    pressConferences,
+    matchReactions,
+    teamAchievements,
     schemaVersion: 4,
   };
 }
@@ -207,6 +220,10 @@ function loadDatabase(persistToFile = true): LeagueDatabase {
     }
     const dbLoaded = parsed as LeagueDatabase;
     dbLoaded.freeAgentInvites = dbLoaded.freeAgentInvites || [];
+    dbLoaded.rosterOpenings = dbLoaded.rosterOpenings || [];
+    dbLoaded.pressConferences = dbLoaded.pressConferences || [];
+    dbLoaded.matchReactions = dbLoaded.matchReactions || [];
+    dbLoaded.teamAchievements = dbLoaded.teamAchievements || [];
     dbLoaded.leagues = (dbLoaded.leagues || []).map((l) => {
       const rest = { ...l } as League & { entryFeeDeposit?: number };
       delete rest.entryFeeDeposit;
@@ -632,6 +649,8 @@ export async function createApp() {
       venue = {
         id: uid('ven'),
         city: cityName,
+        region: String(body.region || '').trim() || undefined,
+        country: String(body.country || '').trim() || undefined,
         name: typedVenueName,
         address: cleanAddress,
         neighborhood: cityName,
@@ -658,12 +677,14 @@ export async function createApp() {
       id: uid('lg'),
       name: body.name.trim(),
       city: cityName,
+      region: String(body.region || '').trim() || undefined,
+      country: String(body.country || '').trim() || undefined,
       description: body.description || '',
       rulesSummary: body.rulesSummary || '',
       leagueType: body.leagueType || 'League',
       status: body.status || 'TESTING',
       venueId: venue.id,
-      locationName: `${cityName} · ${venue.name}`,
+      locationName: `${cityName}${body.region ? `, ${String(body.region).trim()}` : ''} · ${venue.name}`,
       dayOfWeek: body.dayOfWeek || 'Sunday',
       format: body.format || '7v7',
       division: 'Co-Ed',
@@ -681,6 +702,7 @@ export async function createApp() {
       currentWeek: 1,
       totalWeeks: gameWeeks,
       transferDeadlineWeek: Number(body.transferDeadlineWeek) || Math.max(1, Math.floor(gameWeeks * 0.7)),
+      transferExtensionWeeks: Math.max(0, Number(body.transferExtensionWeeks ?? 2)),
       gameDurationMins: Number(body.gameDurationMins) || 55,
       playoffMinGames: Number(body.playoffMinGames) || 2,
       rosterLocked: Boolean(body.rosterLocked),
@@ -738,6 +760,8 @@ export async function createApp() {
         ven = {
           id: uid('ven'),
           city: targetCity,
+          region: league.region,
+          country: league.country,
           name: cleanVenue,
           address: venueAddress?.trim() || `${cleanVenue}, ${targetCity}`,
           neighborhood: targetCity,
@@ -751,6 +775,8 @@ export async function createApp() {
       } else {
         ven.name = cleanVenue;
         ven.city = targetCity;
+        ven.region = league.region;
+        ven.country = league.country;
       }
     } else if (body.venueId) {
       const targetVen = db.venues.find((v) => v.id === body.venueId);
@@ -768,7 +794,9 @@ export async function createApp() {
       if (indoorOutdoor) ven.indoorOutdoor = indoorOutdoor;
       if (Array.isArray(venueFields) && venueFields.length > 0) ven.fields = venueFields;
       ven.city = targetCity;
-      league.locationName = `${targetCity} · ${ven.name}`;
+      ven.region = league.region;
+      ven.country = league.country;
+      league.locationName = `${targetCity}${league.region ? `, ${league.region}` : ''} · ${ven.name}`;
     } else if (body.city) {
       league.locationName = `${body.city} · ${league.locationName.split('·').pop()?.trim() || 'Turf'}`;
     }
@@ -1679,11 +1707,22 @@ export async function createApp() {
     if (target.isCaptain) {
       return res.status(400).json({ error: 'Cannot drop the primary Team Captain.' });
     }
+    if (target.gamesPlayed > 0) {
+      return res.status(400).json({ error: 'Only players who have not played a game this season can be released.' });
+    }
 
     db.players = db.players.filter((p) => p.id !== target.id);
+    const gamesRemaining = db.matches.filter(
+      (match) =>
+        match.leagueId === league.id &&
+        match.status === 'Scheduled' &&
+        (match.stage === 'Regular' || match.stage === 'Group') &&
+        (match.homeTeamId === team.id || match.awayTeamId === team.id)
+    ).length;
 
     // Check standby waitlist for first eligible replacement
     let promotedName: string | null = null;
+    let opening: TeamRosterOpening | undefined;
     const waitlist = team.standbyWaitlist || [];
     const currentRoster = db.players.filter((p) => p.teamId === team.id);
     const promoIdx = waitlist.findIndex(
@@ -1730,10 +1769,163 @@ export async function createApp() {
         details: `Promoted automatically after ${target.name} opened a roster slot`,
         timestamp: nowIso,
       });
+    } else if (gamesRemaining >= 6) {
+      db.rosterOpenings = db.rosterOpenings || [];
+      opening = db.rosterOpenings.find(
+        (entry) => entry.teamId === team.id && entry.status === 'Open'
+      );
+      if (!opening) {
+        opening = {
+          id: uid('open'),
+          leagueId: league.id,
+          teamId: team.id,
+          teamName: team.name,
+          position: target.position,
+          gender: target.gender === 'Female' ? 'Female' : 'Male',
+          fee: league.entryFeeSolo,
+          gamesRemaining,
+          status: 'Open',
+          createdAt: new Date().toISOString(),
+        };
+        db.rosterOpenings.push(opening);
+      }
     }
 
     saveDatabase(db);
-    res.json({ db, promotedName });
+    res.json({ db, promotedName, opening });
+  });
+
+  app.post('/api/roster-openings/:id/join', (req, res) => {
+    const openings = db.rosterOpenings || [];
+    const opening = openings.find((entry) => entry.id === req.params.id);
+    if (!opening || opening.status !== 'Open') {
+      return res.status(404).json({ error: 'This replacement spot is no longer available.' });
+    }
+    const team = db.teams.find((entry) => entry.id === opening.teamId);
+    const league = db.leagues.find((entry) => entry.id === opening.leagueId);
+    if (!team || !league) return res.status(404).json({ error: 'Team or league not found.' });
+
+    const gamesRemaining = db.matches.filter(
+      (match) =>
+        match.leagueId === league.id &&
+        match.status === 'Scheduled' &&
+        (match.stage === 'Regular' || match.stage === 'Group') &&
+        (match.homeTeamId === team.id || match.awayTeamId === team.id)
+    ).length;
+    if (gamesRemaining < 6) {
+      opening.status = 'Closed';
+      saveDatabase(db);
+      return res.status(400).json({ error: 'Replacement registration closes when fewer than 6 games remain.' });
+    }
+
+    const { name, email, position, gender, waiverSigned, waiverSignatureName, paymentProcessed } =
+      req.body as {
+        name: string;
+        email: string;
+        position?: Player['position'];
+        gender?: 'Male' | 'Female';
+        waiverSigned: boolean;
+        waiverSignatureName: string;
+        paymentProcessed?: boolean;
+      };
+    if (!name?.trim() || !email?.trim() || !email.includes('@')) {
+      return res.status(400).json({ error: 'Player full name and valid email are required.' });
+    }
+    if (!waiverSigned || !waiverSignatureName?.trim()) {
+      return res.status(400).json({ error: 'Digital liability waiver signature is required.' });
+    }
+    const playerGender: 'Male' | 'Female' = gender === 'Female' ? 'Female' : opening.gender;
+    const roster = db.players.filter((player) => player.teamId === team.id);
+    const evaluation = evaluateTeamRosterAddition(team, league, roster, playerGender);
+    if (!evaluation.allowed) {
+      if (evaluation.reason.startsWith('Team roster is full')) {
+        opening.status = 'Closed';
+        saveDatabase(db);
+      }
+      return res.status(400).json({ error: evaluation.reason });
+    }
+    const paid = opening.fee === 0 || paymentProcessed === true;
+    if (!paid) {
+      return res.status(402).json({ error: `The standard solo entry fee of $${opening.fee} is required.` });
+    }
+
+    const now = new Date().toISOString();
+    const player: Player = {
+      id: uid('pl'),
+      name: name.trim(),
+      email: email.trim(),
+      teamId: team.id,
+      leagueId: league.id,
+      position: position || opening.position,
+      gender: playerGender,
+      jerseyNumber: roster.length + 1,
+      skillRating: league.skillLevel,
+      isCaptain: false,
+      gamesPlayed: 0,
+      goals: 0,
+      assists: 0,
+      cleanSheets: 0,
+      wins: 0,
+      yellowCards: 0,
+      redCards: 0,
+      suspendedNextMatch: false,
+      motmAwards: 0,
+      joinedTeamAt: now,
+      lastMarketActionAt: now,
+      marketListing: null,
+      loansUsedThisSeason: 0,
+      activeLoanId: null,
+      waiverSigned: true,
+      waiverSignedAt: now,
+      waiverSignatureName: waiverSignatureName.trim(),
+      registrationPaidAmount: opening.fee,
+      registrationStatus: 'Complete',
+      registrationCompletedAt: now,
+    };
+    db.players.push(player);
+    opening.status = 'Filled';
+    opening.filledByPlayerId = player.id;
+    db.doneDeals.unshift({
+      id: uid('dd'),
+      leagueId: league.id,
+      kind: 'free_agent',
+      summary: `${player.name} joined ${team.name} as a replacement`,
+      details: `Replacement registration · $${opening.fee} standard solo fee paid`,
+      timestamp: now,
+    });
+    saveDatabase(db);
+    res.json(db);
+  });
+
+  app.post('/api/teams/:id/market-listing', (req, res) => {
+    const team = db.teams.find((entry) => entry.id === req.params.id);
+    if (!team) return res.status(404).json({ error: 'Team not found.' });
+    const { action, playerId, positionNeeded, positionOffered, availabilityNotes } = req.body as {
+      action: 'list' | 'unlist';
+      playerId: string;
+      positionNeeded?: Player['position'];
+      positionOffered?: Player['position'];
+      availabilityNotes?: string;
+    };
+    const captain = db.players.find(
+      (player) => player.id === playerId && player.teamId === team.id && player.isCaptain
+    );
+    if (!captain) return res.status(403).json({ error: 'Only this team’s captain can manage its transfer listing.' });
+    if (action === 'unlist') {
+      team.teamMarketListing = null;
+    } else {
+      if (!positionNeeded || !positionOffered) {
+        return res.status(400).json({ error: 'Choose both the position needed and position offered.' });
+      }
+      team.teamMarketListing = {
+        positionNeeded,
+        positionOffered,
+        availabilityNotes: String(availabilityNotes || '').trim().slice(0, 300),
+        listedAt: new Date().toISOString(),
+      };
+    }
+    saveDatabase(db);
+    res.json(db);
   });
 
   // Friend Invites & Free-Agent Recruiting Pool
@@ -2048,9 +2240,13 @@ export async function createApp() {
     if (league.rosterLocked || league.isPlayoffsActive) {
       return res.status(400).json({ error: 'Rosters are locked for playoffs.' });
     }
-    if (league.currentWeek > league.transferDeadlineWeek) {
+    const rankForDeadline = computeServerStandings(league.id, db).find((row) => row.teamId === fromTeamId)?.rank ?? 99;
+    const extensionWeeks =
+      rankForDeadline >= 8 && rankForDeadline <= 10 ? Math.max(0, league.transferExtensionWeeks ?? 2) : 0;
+    const effectiveDeadline = league.transferDeadlineWeek + extensionWeeks;
+    if (league.currentWeek > effectiveDeadline) {
       return res.status(400).json({
-        error: `Permanent transfer window closed after Week ${league.transferDeadlineWeek}.`,
+        error: `Permanent transfer window closed after Week ${effectiveDeadline}${extensionWeeks ? ` (including the ${extensionWeeks}-week lower-table extension)` : ''}.`,
       });
     }
     if (fromTeamId === toTeamId) {
@@ -2141,6 +2337,17 @@ export async function createApp() {
     if (!league) return res.status(404).json({ error: 'League not found' });
     if (league.rosterLocked || league.isPlayoffsActive) {
       return res.status(400).json({ error: 'Loans are blocked during playoffs and roster lock.' });
+    }
+    const borrowingRank = computeServerStandings(league.id, db).find(
+      (row) => row.teamId === borrowingTeamId
+    )?.rank ?? 99;
+    const extensionWeeks =
+      borrowingRank >= 8 && borrowingRank <= 10 ? Math.max(0, league.transferExtensionWeeks ?? 2) : 0;
+    const effectiveDeadline = league.transferDeadlineWeek + extensionWeeks;
+    if (league.currentWeek > effectiveDeadline) {
+      return res.status(400).json({
+        error: `Transfer window closed after Week ${effectiveDeadline}${extensionWeeks ? ` (including the ${extensionWeeks}-week lower-table extension)` : ''}.`,
+      });
     }
     if (borrowingTeamId === lendingTeamId) {
       return res.status(400).json({ error: 'Borrowing and lending teams must be different.' });
@@ -2544,6 +2751,33 @@ export async function createApp() {
       playerName: string;
       status: 'IN' | 'OUT' | 'MAYBE';
     };
+    const match = db.matches.find((entry) => entry.id === matchId);
+    const player = db.players.find((entry) => entry.id === playerId);
+    if (
+      !match ||
+      match.status !== 'Scheduled' ||
+      (match.homeTeamId !== teamId && match.awayTeamId !== teamId) ||
+      !player ||
+      player.teamId !== teamId
+    ) {
+      return res.status(400).json({ error: 'RSVP must be submitted by a player on a team in a scheduled match.' });
+    }
+    const lastPlayed = db.matches
+      .filter(
+        (entry) =>
+          entry.leagueId === match.leagueId &&
+          entry.status === 'Final' &&
+          (entry.homeTeamId === teamId || entry.awayTeamId === teamId)
+      )
+      .sort((a, b) => new Date(b.scheduledDate).getTime() - new Date(a.scheduledDate).getTime())[0];
+    if (lastPlayed) {
+      const opensAt = new Date(lastPlayed.scheduledDate);
+      opensAt.setDate(opensAt.getDate() + 1);
+      opensAt.setHours(0, 0, 0, 0);
+      if (Date.now() < opensAt.getTime()) {
+        return res.status(400).json({ error: 'RSVP opens the day after your previous game.' });
+      }
+    }
     const existing = db.rsvps.find(
       (r) => r.matchId === matchId && r.teamId === teamId && r.playerId === playerId
     );
@@ -2552,6 +2786,153 @@ export async function createApp() {
     } else {
       db.rsvps.push({ matchId, teamId, playerId, playerName, status });
     }
+    saveDatabase(db);
+    res.json(db);
+  });
+
+  app.post('/api/matches/:id/press-conference', (req, res) => {
+    const match = db.matches.find((entry) => entry.id === req.params.id);
+    if (!match || match.status !== 'Final') {
+      return res.status(400).json({ error: 'Press conferences are available after a match is final.' });
+    }
+    const { teamId, captainId, statement } = req.body as {
+      teamId: string;
+      captainId: string;
+      statement: string;
+    };
+    const team = db.teams.find((entry) => entry.id === teamId);
+    const captain = db.players.find(
+      (entry) => entry.id === captainId && entry.teamId === teamId && entry.isCaptain
+    );
+    if (
+      !team ||
+      (match.homeTeamId !== teamId && match.awayTeamId !== teamId) ||
+      !captain
+    ) {
+      return res.status(403).json({ error: 'Only a captain from a team in this match can post a statement.' });
+    }
+    if (!statement?.trim() || statement.trim().length > 500) {
+      return res.status(400).json({ error: 'Write a statement of 1–500 characters.' });
+    }
+    db.pressConferences = db.pressConferences || [];
+    const existing = db.pressConferences.find(
+      (entry) => entry.matchId === match.id && entry.teamId === team.id
+    );
+    const pressConference: MatchPressConference = {
+      matchId: match.id,
+      teamId: team.id,
+      teamName: team.name,
+      captainId: captain.id,
+      captainName: captain.name,
+      statement: statement.trim(),
+      createdAt: new Date().toISOString(),
+    };
+    if (existing) Object.assign(existing, pressConference);
+    else db.pressConferences.unshift(pressConference);
+    saveDatabase(db);
+    res.json(db);
+  });
+
+  app.post('/api/matches/:id/reactions', (req, res) => {
+    const match = db.matches.find((entry) => entry.id === req.params.id);
+    if (!match || match.status !== 'Final') {
+      return res.status(400).json({ error: 'Reactions are available after a match is final.' });
+    }
+    const { playerId, emoji } = req.body as {
+      playerId: string;
+      emoji: MatchReaction['emoji'];
+    };
+    const player = db.players.find((entry) => entry.id === playerId);
+    if (
+      !player ||
+      (match.homeTeamId !== player.teamId && match.awayTeamId !== player.teamId) ||
+      !['🔥', '👏', '💪', '😮', '❤️'].includes(emoji)
+    ) {
+      return res.status(400).json({ error: 'Choose a valid reaction as a player in this match.' });
+    }
+    db.matchReactions = db.matchReactions || [];
+    const existing = db.matchReactions.find(
+      (entry) => entry.matchId === match.id && entry.playerId === player.id
+    );
+    const reaction: MatchReaction = {
+      matchId: match.id,
+      teamId: player.teamId,
+      playerId: player.id,
+      playerName: player.name,
+      emoji,
+      createdAt: new Date().toISOString(),
+    };
+    if (existing) Object.assign(existing, reaction);
+    else db.matchReactions.push(reaction);
+    saveDatabase(db);
+    res.json(db);
+  });
+
+  app.get('/api/leagues/:id/match-hype', (req, res) => {
+    res.json(
+      db.matches
+        .filter((match) => match.leagueId === req.params.id)
+        .map((match) => ({
+          id: match.id,
+          hypeCount: match.hypeCount || 0,
+          matchOfNight: Boolean(match.matchOfNight),
+        }))
+    );
+  });
+
+  app.post('/api/matches/:id/hype', (req, res) => {
+    const match = db.matches.find((entry) => entry.id === req.params.id);
+    if (!match || match.status !== 'Scheduled') {
+      return res.status(400).json({ error: 'Hype taps are available for scheduled matches.' });
+    }
+    match.hypeCount = (match.hypeCount || 0) + 1;
+    match.hypeUpdatedAt = new Date().toISOString();
+    match.matchOfNight = match.hypeCount >= MATCH_OF_NIGHT_HYPE_THRESHOLD;
+    saveDatabase(db);
+    res.json(db);
+  });
+
+  app.post('/api/teams/:id/objectives/claim', (req, res) => {
+    const team = db.teams.find((entry) => entry.id === req.params.id);
+    if (!team) return res.status(404).json({ error: 'Team not found.' });
+    const { matchId, playerId } = req.body as { matchId: string; playerId: string };
+    const player = db.players.find((entry) => entry.id === playerId && entry.teamId === team.id);
+    const match = db.matches.find((entry) => entry.id === matchId);
+    if (!player || !match || match.status !== 'Final') {
+      return res.status(400).json({ error: 'A team player can claim an objective after a completed match.' });
+    }
+    if (match.homeTeamId !== team.id && match.awayTeamId !== team.id) {
+      return res.status(400).json({ error: 'That match is not part of this team’s schedule.' });
+    }
+    db.teamAchievements = db.teamAchievements || [];
+    if (db.teamAchievements.some((achievement) => achievement.teamId === team.id && achievement.matchId === match.id)) {
+      return res.status(409).json({ error: 'This match objective has already been claimed.' });
+    }
+    const standingsBeforeMatch = computeServerStandings(team.leagueId, {
+      ...db,
+      matches: db.matches.filter((entry) => entry.id !== match.id),
+    });
+    const rank = standingsBeforeMatch.find((row) => row.teamId === team.id)?.rank ?? 99;
+    const teamScore = match.homeTeamId === team.id ? match.homeScore ?? 0 : match.awayScore ?? 0;
+    const opponentScore = match.homeTeamId === team.id ? match.awayScore ?? 0 : match.homeScore ?? 0;
+    const objectiveMet =
+      rank <= 3 ? teamScore > opponentScore : rank >= 8 ? teamScore >= 1 : teamScore >= opponentScore;
+    if (!objectiveMet) {
+      return res.status(400).json({ error: 'The result did not meet this team’s board objective.' });
+    }
+    const lowRank = rank >= 8;
+    const achievement: TeamAchievement = {
+      id: uid('ach'),
+      leagueId: team.leagueId,
+      teamId: team.id,
+      matchId: match.id,
+      title: lowRank ? 'Climb the Table' : rank <= 3 ? 'Champions Standard' : 'Build Momentum',
+      description: lowRank ? 'Scored at least one goal' : rank <= 3 ? 'Won a match' : 'Earned at least one point',
+      points: 50,
+      badge: lowRank ? 'Comeback Crew' : rank <= 3 ? 'Champions Standard' : 'Momentum Maker',
+      createdAt: new Date().toISOString(),
+    };
+    db.teamAchievements.unshift(achievement);
     saveDatabase(db);
     res.json(db);
   });

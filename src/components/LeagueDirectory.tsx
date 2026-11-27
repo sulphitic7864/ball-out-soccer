@@ -807,7 +807,9 @@ export const LeagueDirectory: React.FC<LeagueDirectoryProps> = ({
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-300">
                       <span className="inline-flex items-center gap-1 font-medium text-white">
                         <MapPin className="h-3.5 w-3.5 text-emerald-400" />
-                        {league.city || venue?.city || 'Toronto'} · {venue?.name || league.locationName}
+                        {[league.city || venue?.city || 'Toronto', league.region || venue?.region, league.country || venue?.country]
+                          .filter(Boolean)
+                          .join(', ')} · {venue?.name || league.locationName}
                       </span>
                       {venue?.indoorOutdoor && (
                         <>

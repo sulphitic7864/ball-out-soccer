@@ -22,6 +22,8 @@ export interface BrandConfig {
 export interface Venue {
   id: string;
   city: string;
+  region?: string;
+  country?: string;
   name: string;
   address: string;
   neighborhood: string;
@@ -41,6 +43,8 @@ export interface League {
   id: string;
   name: string;
   city: string;
+  region?: string;
+  country?: string;
   description?: string;
   rulesSummary?: string;
   leagueType: LeagueType;
@@ -64,6 +68,7 @@ export interface League {
   currentWeek: number;
   totalWeeks: number;
   transferDeadlineWeek: number;
+  transferExtensionWeeks?: number;
   gameDurationMins: number;
   playoffMinGames: number;
   rosterLocked: boolean;
@@ -116,6 +121,14 @@ export interface Team {
   registrationCompletedAt?: string;
   lastReminderAt?: string;
   lastLifelineRequestAt?: string;
+  teamMarketListing?: TeamMarketListing | null;
+}
+
+export interface TeamMarketListing {
+  positionNeeded: PlayerPosition;
+  positionOffered: PlayerPosition;
+  availabilityNotes: string;
+  listedAt: string;
 }
 
 export interface MarketListing {
@@ -194,6 +207,54 @@ export interface Match {
   awayScore: number | null;
   events: MatchEvent[];
   loanAppearancePlayerIds: string[];
+  hypeCount?: number;
+  hypeUpdatedAt?: string;
+  matchOfNight?: boolean;
+}
+
+export interface TeamRosterOpening {
+  id: string;
+  leagueId: string;
+  teamId: string;
+  teamName: string;
+  position: PlayerPosition;
+  gender: 'Male' | 'Female';
+  fee: number;
+  gamesRemaining: number;
+  status: 'Open' | 'Filled' | 'Closed';
+  createdAt: string;
+  filledByPlayerId?: string;
+}
+
+export interface MatchPressConference {
+  matchId: string;
+  teamId: string;
+  teamName: string;
+  captainId: string;
+  captainName: string;
+  statement: string;
+  createdAt: string;
+}
+
+export interface MatchReaction {
+  matchId: string;
+  teamId: string;
+  playerId: string;
+  playerName: string;
+  emoji: '🔥' | '👏' | '💪' | '😮' | '❤️';
+  createdAt: string;
+}
+
+export interface TeamAchievement {
+  id: string;
+  leagueId: string;
+  teamId: string;
+  matchId?: string;
+  title: string;
+  description: string;
+  points: number;
+  badge: string;
+  createdAt: string;
 }
 
 export interface LoanGameLog {
@@ -500,5 +561,9 @@ export interface LeagueDatabase {
   championsCup: ChampionsCupConfig;
   teamInvites: TeamInvite[];
   freeAgentInvites: FreeAgentFriendInvite[];
+  rosterOpenings?: TeamRosterOpening[];
+  pressConferences?: MatchPressConference[];
+  matchReactions?: MatchReaction[];
+  teamAchievements?: TeamAchievement[];
   schemaVersion?: number;
 }

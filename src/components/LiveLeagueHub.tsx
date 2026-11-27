@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Trophy,
   Calendar,
@@ -19,6 +19,7 @@ import {
   computeStandings,
   computeTeamOfTheWeek,
   getEffectiveTeamCaps,
+  MATCH_OF_NIGHT_HYPE_THRESHOLD,
 } from '../utils/leagueHelpers.ts';
 
 interface LiveLeagueHubProps {
@@ -36,7 +37,7 @@ interface LiveLeagueHubProps {
   onDatabaseUpdate?: (db: LeagueDatabase) => void;
 }
 
-type HubSection = 'standings' | 'teams' | 'schedule' | 'scorers' | 'bracket' | 'ticker';
+type HubSection = 'standings' | 'teams' | 'schedule' | 'awards' | 'bracket' | 'ticker';
 
 function formatMoney(amount: number): string {
   const rounded = Math.round(amount * 100) / 100;
@@ -55,6 +56,12 @@ export const LiveLeagueHub: React.FC<LiveLeagueHubProps> = ({
 }) => {
   const [section, setSection] = useState<HubSection>('standings');
   const [scheduleFilter, setScheduleFilter] = useState<'all' | 'Scheduled' | 'Final'>('all');
+  const [scheduleView, setScheduleView] = useState<'league' | 'team'>('league');
+  const [scheduleTeamId, setScheduleTeamId] = useState('');
+  const [hypeFeedback, setHypeFeedback] = useState('');
+  const [hypeByMatch, setHypeByMatch] = useState<
+    Record<string, { hypeCount: number; matchOfNight: boolean }>
+  >({});
   const [quickJoinCode, setQuickJoinCode] = useState('');
   const [faInviterId, setFaInviterId] = useState('');
   const [faFriendName, setFaFriendName] = useState('');
@@ -64,6 +71,11 @@ export const LiveLeagueHub: React.FC<LiveLeagueHubProps> = ({
   const [faFeedback, setFaFeedback] = useState('');
 
   const league = db.leagues.find((l) => l.id === selectedLeagueId) || db.leagues[0];
+  const leagueTeams = useMemo(
+    () => (league ? db.teams.filter((team) => team.leagueId === league.id) : []),
+    [league, db.teams]
+  );
+  const currentScheduleTeamId = scheduleTeamId || leagueTeams[0]?.id || '';
 
   const standings = useMemo(
     () => (league ? computeStandings(league.id, db.teams, db.matches) : []),
@@ -75,8 +87,48 @@ export const LiveLeagueHub: React.FC<LiveLeagueHubProps> = ({
     return db.matches
       .filter((m) => m.leagueId === league.id && (m.stage === 'Regular' || m.stage === 'Group'))
       .filter((m) => scheduleFilter === 'all' || m.status === scheduleFilter)
+      .filter(
+        (m) =>
+          scheduleView === 'league' ||
+          m.homeTeamId === currentScheduleTeamId ||
+          m.awayTeamId === currentScheduleTeamId
+      )
       .sort((a, b) => b.week - a.week);
-  }, [league, db.matches, scheduleFilter]);
+  }, [league, db.matches, scheduleFilter, scheduleView, currentScheduleTeamId]);
+
+  useEffect(() => {
+    if (!league || section !== 'schedule') return;
+    let active = true;
+    const refreshHype = async () => {
+      try {
+        const response = await fetch(`/api/leagues/${league.id}/match-hype`);
+        if (!response.ok) throw new Error('Could not refresh match hype.');
+        const data = (await response.json()) as Array<{
+          id: string;
+          hypeCount: number;
+          matchOfNight: boolean;
+        }>;
+        if (active) {
+          setHypeByMatch(
+            Object.fromEntries(
+              data.map((match) => [
+                match.id,
+                { hypeCount: match.hypeCount, matchOfNight: match.matchOfNight },
+              ])
+            )
+          );
+        }
+      } catch {
+        if (active) setHypeFeedback('Live hype updates are temporarily unavailable.');
+      }
+    };
+    void refreshHype();
+    const timer = window.setInterval(() => void refreshHype(), 10000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [league, section]);
 
   const bracketMatches = useMemo(() => {
     if (!league) return [];
@@ -84,14 +136,6 @@ export const LiveLeagueHub: React.FC<LiveLeagueHubProps> = ({
       (m) => m.leagueId === league.id && m.stage !== 'Regular' && m.stage !== 'Group'
     );
   }, [league, db.matches]);
-
-  const topScorers = useMemo(() => {
-    if (!league) return [];
-    return db.players
-      .filter((p) => p.leagueId === league.id)
-      .sort((a, b) => b.goals - a.goals || b.assists - a.assists || a.gamesPlayed - b.gamesPlayed)
-      .slice(0, 15);
-  }, [league, db.players]);
 
   const leagueDeals = useMemo(() => {
     if (!league) return [];
@@ -112,7 +156,7 @@ export const LiveLeagueHub: React.FC<LiveLeagueHubProps> = ({
             No Active Leagues Running Yet
           </h1>
           <p className="text-sm text-slate-400 max-w-lg mx-auto">
-            Live standings tables, schedules, Team of the Week cards, Top Scorers, and knockout brackets appear automatically as soon as your admin launches the first league with a manually typed venue.
+            Live standings, team and league schedules, Team of the Week cards, and knockout brackets appear automatically when the first league is launched.
           </p>
           {onOpenAdmin && (
             <button
@@ -232,7 +276,7 @@ export const LiveLeagueHub: React.FC<LiveLeagueHubProps> = ({
             { id: 'standings' as const, label: 'Standings', icon: <Trophy className="h-4 w-4" /> },
             { id: 'teams' as const, label: `Teams & Formation (${teamCount})`, icon: <Users className="h-4 w-4" /> },
             { id: 'schedule' as const, label: 'Schedule & Scores', icon: <Calendar className="h-4 w-4" /> },
-            { id: 'scorers' as const, label: 'Top Scorers', icon: <Award className="h-4 w-4" /> },
+            { id: 'awards' as const, label: 'Team of the Week', icon: <Award className="h-4 w-4" /> },
             { id: 'bracket' as const, label: 'Playoff Bracket', icon: <GitBranch className="h-4 w-4" /> },
             { id: 'ticker' as const, label: 'Transfer Ticker', icon: <ArrowLeftRight className="h-4 w-4" /> },
           ].map((tab) => (
@@ -341,7 +385,17 @@ export const LiveLeagueHub: React.FC<LiveLeagueHubProps> = ({
                   {standings.map((row) => (
                     <tr key={row.teamId} className="hover:bg-white/[0.03] transition-colors">
                       <td className="py-3 px-4 font-mono-num text-xs font-bold text-slate-400">
-                        {row.rank}
+                        <span className="inline-flex items-center gap-1">
+                          {row.rank}
+                          {league.status === 'COMPLETED' && row.rank <= 3 && (
+                            <Trophy
+                              className={`h-3.5 w-3.5 ${
+                                row.rank === 1 ? 'text-amber-300' : row.rank === 2 ? 'text-slate-300' : 'text-orange-400'
+                              }`}
+                              aria-label={`${row.rank === 1 ? 'Gold' : row.rank === 2 ? 'Silver' : 'Bronze'} trophy`}
+                            />
+                          )}
+                        </span>
                       </td>
                       <td className="py-3 px-4 font-medium text-white whitespace-nowrap">
                         <button
@@ -782,7 +836,43 @@ export const LiveLeagueHub: React.FC<LiveLeagueHubProps> = ({
       {section === 'schedule' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-4">
-            <h2 className="font-display text-xl font-bold text-white">Game Schedule & Results</h2>
+            <div>
+              <h2 className="font-display text-xl font-bold text-white">
+                {scheduleView === 'team' ? 'My Team Schedule' : 'League Schedule & Results'}
+              </h2>
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setScheduleView('team')}
+                  className={`rounded-md px-3 py-1 text-xs font-semibold ${
+                    scheduleView === 'team' ? 'bg-emerald-500 text-slate-950' : 'border border-white/10 text-slate-300'
+                  }`}
+                >
+                  My Team
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScheduleView('league')}
+                  className={`rounded-md px-3 py-1 text-xs font-semibold ${
+                    scheduleView === 'league' ? 'bg-emerald-500 text-slate-950' : 'border border-white/10 text-slate-300'
+                  }`}
+                >
+                  All Teams
+                </button>
+                {scheduleView === 'team' && (
+                  <select
+                    value={currentScheduleTeamId}
+                    onChange={(event) => setScheduleTeamId(event.target.value)}
+                    className="rounded-md border border-white/10 bg-[#111821] px-2 py-1 text-xs text-white"
+                    aria-label="Select team schedule"
+                  >
+                    {leagueTeams.map((team) => (
+                      <option key={team.id} value={team.id}>{team.name}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
             <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-[#111821] p-1">
               {(['all', 'Scheduled', 'Final'] as const).map((st) => (
                 <button
@@ -801,6 +891,15 @@ export const LiveLeagueHub: React.FC<LiveLeagueHubProps> = ({
             </div>
           </div>
 
+          {leagueMatches.some((match) => (hypeByMatch[match.id]?.matchOfNight ?? match.matchOfNight)) && (
+            <div className="rounded-xl border border-amber-400/40 bg-amber-400/10 px-4 py-3 text-sm font-bold text-amber-200">
+              Crazy Match Happening Now — the sideline has named this the Match of the Night!
+            </div>
+          )}
+          {hypeFeedback && (
+            <div className="text-xs text-amber-300" role="status">{hypeFeedback}</div>
+          )}
+
           {leagueMatches.length === 0 ? (
             <div className="rounded-2xl border border-white/10 bg-[#111821] p-10 text-center text-sm text-slate-400">
               Kickoff Date TBD — Match schedule will publish once registration closes (or Admin generates preview weeks).
@@ -814,6 +913,8 @@ export const LiveLeagueHub: React.FC<LiveLeagueHubProps> = ({
                   m.halftimeMins ?? 5,
                   m.secondHalfMins ?? 25
                 );
+                const hypeCount = hypeByMatch[m.id]?.hypeCount ?? m.hypeCount ?? 0;
+                const hypeProgress = Math.min(100, (hypeCount / MATCH_OF_NIGHT_HYPE_THRESHOLD) * 100);
                 return (
                   <div
                     key={m.id}
@@ -852,6 +953,41 @@ export const LiveLeagueHub: React.FC<LiveLeagueHubProps> = ({
                         {clock.timelineLabel}
                       </span>
                     </div>
+                    {m.status === 'Scheduled' && (
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-xs text-amber-300">
+                          {hypeByMatch[m.id]?.matchOfNight || m.matchOfNight
+                            ? '🏆 Match of the Night'
+                            : `${hypeCount}/${MATCH_OF_NIGHT_HYPE_THRESHOLD} sideline hype taps`}
+                        </div>
+                        <div
+                          className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10"
+                          aria-label={`${hypeCount} of ${MATCH_OF_NIGHT_HYPE_THRESHOLD} hype taps`}
+                        >
+                          <div
+                            className="h-full rounded-full bg-amber-400 transition-[width]"
+                            style={{ width: `${hypeProgress}%` }}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            setHypeFeedback('');
+                            try {
+                              const response = await fetch(`/api/matches/${m.id}/hype`, { method: 'POST' });
+                              const data = await response.json();
+                              if (!response.ok) throw new Error(data.error || 'Could not send hype.');
+                              onDatabaseUpdate?.(data);
+                            } catch (error) {
+                              setHypeFeedback(error instanceof Error ? error.message : 'Could not send hype.');
+                            }
+                          }}
+                          className="rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-amber-300"
+                        >
+                          Hype the match!
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -860,7 +996,7 @@ export const LiveLeagueHub: React.FC<LiveLeagueHubProps> = ({
         </div>
       )}
 
-      {section === 'scorers' && (
+      {section === 'awards' && (
         <div className="space-y-6">
           {/* Team of the Week Showcase */}
           {teamOfTheWeek.length > 0 && (
@@ -910,64 +1046,6 @@ export const LiveLeagueHub: React.FC<LiveLeagueHubProps> = ({
             </div>
           )}
 
-          <div className="rounded-2xl border border-white/10 bg-[#111821] overflow-hidden">
-            <div className="px-5 py-4 border-b border-white/10">
-              <h2 className="font-display text-xl font-bold text-white">
-                Golden Boot, MOTM & Discipline Leaderboard
-              </h2>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-white/10 bg-[#090D12] text-[11px] font-semibold text-slate-400">
-                    <th className="py-3 px-4">#</th>
-                    <th className="py-3 px-4">Player</th>
-                    <th className="py-3 px-4">Club</th>
-                    <th className="py-3 px-3 text-right">GP</th>
-                    <th className="py-3 px-3 text-right">Goals</th>
-                    <th className="py-3 px-3 text-right">MOTM</th>
-                    <th className="py-3 px-3 text-right">YC / RC</th>
-                    <th className="py-3 px-4">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5 text-sm">
-                  {topScorers.map((p, idx) => {
-                    const team = db.teams.find((t) => t.id === p.teamId);
-                    return (
-                      <tr key={p.id} className="hover:bg-white/[0.03]">
-                        <td className="py-3 px-4 font-mono-num text-xs text-slate-400">{idx + 1}</td>
-                        <td className="py-3 px-4 font-medium text-white">
-                          {p.name} <span className="text-xs text-slate-500">· {p.position}</span>
-                        </td>
-                        <td className="py-3 px-4 text-xs text-slate-300">{team?.name || '—'}</td>
-                        <td className="py-3 px-3 text-right font-mono-num text-slate-300">
-                          {p.gamesPlayed}
-                        </td>
-                        <td className="py-3 px-3 text-right font-mono-num font-bold text-emerald-400">
-                          {p.goals}
-                        </td>
-                        <td className="py-3 px-3 text-right font-mono-num text-amber-300">
-                          {p.motmAwards ?? 0}
-                        </td>
-                        <td className="py-3 px-3 text-right font-mono-num text-xs text-slate-300">
-                          {p.yellowCards} / {p.redCards}
-                        </td>
-                        <td className="py-3 px-4 text-xs">
-                          {p.suspendedNextMatch ? (
-                            <span className="text-rose-400 font-semibold">Suspended Next Match</span>
-                          ) : p.gamesPlayed >= league.playoffMinGames ? (
-                            <span className="text-emerald-400">Playoff Eligible</span>
-                          ) : (
-                            <span className="text-slate-400">Needs {league.playoffMinGames - p.gamesPlayed} GP</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
         </div>
       )}
 

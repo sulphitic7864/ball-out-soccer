@@ -20,6 +20,7 @@ import {
   checkPlayerMarketCooldown,
   checkTeamLifelineCooldown,
   computeStandings,
+  evaluateTeamRosterAddition,
 } from '../utils/leagueHelpers.ts';
 
 interface TransferMarketProps {
@@ -48,6 +49,15 @@ export const TransferMarket: React.FC<TransferMarketProps> = ({
   const [listMode, setListMode] = useState<MarketMode>('Both');
   const [listPos, setListPos] = useState<PlayerPosition>('MID');
   const [listNotes, setListNotes] = useState('');
+  const [teamNeedPosition, setTeamNeedPosition] = useState<PlayerPosition>('FWD');
+  const [teamOfferPosition, setTeamOfferPosition] = useState<PlayerPosition>('DEF');
+  const [teamListingNotes, setTeamListingNotes] = useState('');
+  const [replacementOpeningId, setReplacementOpeningId] = useState('');
+  const [replacementName, setReplacementName] = useState('');
+  const [replacementEmail, setReplacementEmail] = useState('');
+  const [replacementPosition, setReplacementPosition] = useState<PlayerPosition>('MID');
+  const [replacementGender, setReplacementGender] = useState<'Male' | 'Female'>('Male');
+  const [replacementWaiverName, setReplacementWaiverName] = useState('');
 
   // Proposal Modal state
   const [proposalKind, setProposalKind] = useState<'swap' | 'loan' | null>(null);
@@ -85,6 +95,9 @@ export const TransferMarket: React.FC<TransferMarketProps> = ({
   const activeTeam = db.teams.find((t) => t.id === activePlayer?.teamId);
   const activeRank = standings.find((s) => s.teamId === activeTeam?.id)?.rank ?? 99;
   const isStrugglingTeam = activeRank >= 8 && activeRank <= 10;
+  const transferDeadline = league
+    ? league.transferDeadlineWeek + (isStrugglingTeam ? league.transferExtensionWeeks ?? 2 : 0)
+    : 0;
   const teamLifelineCooldown = activeTeam
     ? checkTeamLifelineCooldown(activeTeam)
     : { unlocked: false, hoursRemaining: 0, label: '' };
@@ -98,6 +111,32 @@ export const TransferMarket: React.FC<TransferMarketProps> = ({
   const listedPlayers = useMemo(
     () => leaguePlayers.filter((p) => p.marketListing !== null),
     [leaguePlayers]
+  );
+  const teamListings = useMemo(
+    () => leagueTeams.filter((team) => team.teamMarketListing),
+    [leagueTeams]
+  );
+  const rosterOpenings = useMemo(
+    () =>
+      (db.rosterOpenings || []).filter(
+        (opening) =>
+          opening.leagueId === league?.id &&
+          opening.status === 'Open' &&
+          (() => {
+            const team = leagueTeams.find((entry) => entry.id === opening.teamId);
+            if (!team || !league) return false;
+            const roster = leaguePlayers.filter((player) => player.teamId === team.id);
+            return evaluateTeamRosterAddition(team, league, roster, opening.gender).allowed;
+          })() &&
+          db.matches.filter(
+            (match) =>
+              match.leagueId === opening.leagueId &&
+              match.status === 'Scheduled' &&
+              (match.stage === 'Regular' || match.stage === 'Group') &&
+              (match.homeTeamId === opening.teamId || match.awayTeamId === opening.teamId)
+          ).length >= 6
+      ),
+    [db.rosterOpenings, db.matches, league, leagueTeams, leaguePlayers]
   );
 
   const leagueTransfers = useMemo(
@@ -223,6 +262,67 @@ export const TransferMarket: React.FC<TransferMarketProps> = ({
       setFeedback({ type: 'ok', msg: 'Removed from Market Board (3-day cooldown reset).' });
     } catch (err) {
       setFeedback({ type: 'err', msg: err instanceof Error ? err.message : 'Error' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleTeamListing = async (action: 'list' | 'unlist') => {
+    setBusy(true);
+    setFeedback(null);
+    try {
+      const response = await fetch(`/api/teams/${activeTeam.id}/market-listing`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action,
+          playerId: activePlayer.id,
+          positionNeeded: teamNeedPosition,
+          positionOffered: teamOfferPosition,
+          availabilityNotes: teamListingNotes,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not update team listing.');
+      onDatabaseUpdate(data);
+      setFeedback({ type: 'ok', msg: action === 'list' ? 'Team recruitment need posted.' : 'Team listing removed.' });
+    } catch (error) {
+      setFeedback({ type: 'err', msg: error instanceof Error ? error.message : 'Could not update team listing.' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleReplacementJoin = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setFeedback(null);
+    try {
+      const opening = rosterOpenings.find((entry) => entry.id === replacementOpeningId);
+      if (!opening) throw new Error('This replacement spot is no longer available.');
+      const response = await fetch(`/api/roster-openings/${opening.id}/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: replacementName,
+          email: replacementEmail,
+          position: replacementPosition,
+          gender: replacementGender,
+          waiverSigned: true,
+          waiverSignatureName: replacementWaiverName,
+          paymentProcessed: true,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not join this roster.');
+      onDatabaseUpdate(data);
+      setReplacementOpeningId('');
+      setReplacementName('');
+      setReplacementEmail('');
+      setReplacementWaiverName('');
+      setFeedback({ type: 'ok', msg: `Joined ${opening.teamName}; the standard $${opening.fee} solo fee has been recorded.` });
+    } catch (error) {
+      setFeedback({ type: 'err', msg: error instanceof Error ? error.message : 'Could not join this roster.' });
     } finally {
       setBusy(false);
     }
@@ -500,7 +600,12 @@ export const TransferMarket: React.FC<TransferMarketProps> = ({
             <p className="text-xs text-slate-400">
               {isStrugglingTeam
                 ? `Because ${activeTeam.name} sits in #${activeRank} place, ANY teammate can request a 1-for-1 Swap or 4-Game Loan reinforcement (${teamLifelineCooldown.label}).`
-                : 'Transfer deadline: Week ' + league.transferDeadlineWeek + ' · Max 1 loan per season per player.'}
+                : 'Captains initiate moves · Max 1 loan per season per player.'}
+            </p>
+            <p className="text-[11px] text-slate-500">
+              Transfer window: through Week {transferDeadline}
+              {isStrugglingTeam ? ` (includes ${league.transferExtensionWeeks ?? 2}-week extension)` : ''}
+              {' · '}Admin can adjust the extension.
             </p>
           </div>
 
@@ -583,6 +688,70 @@ export const TransferMarket: React.FC<TransferMarketProps> = ({
           </form>
         )}
 
+        {activePlayer.isCaptain && (
+          <div className="rounded-xl border border-amber-400/25 bg-amber-400/5 p-4 space-y-3">
+            <div>
+              <h3 className="text-sm font-bold text-white">Team Recruitment / Transfer Need</h3>
+              <p className="mt-1 text-xs text-slate-400">
+                Post your team’s position need and the position it can offer. This is separate from individual player swap approvals.
+              </p>
+            </div>
+            {activeTeam.teamMarketListing ? (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs text-amber-200">
+                  Seeking {activeTeam.teamMarketListing.positionNeeded}; offering {activeTeam.teamMarketListing.positionOffered}.
+                </p>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => handleTeamListing('unlist')}
+                  className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white"
+                >
+                  Remove team listing
+                </button>
+              </div>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-4">
+                <select
+                  value={teamNeedPosition}
+                  onChange={(event) => setTeamNeedPosition(event.target.value as PlayerPosition)}
+                  className="rounded-lg border border-white/15 bg-[#090D12] px-3 py-2 text-xs text-white"
+                  aria-label="Position your team needs"
+                >
+                  {(['GK', 'DEF', 'MID', 'FWD'] as const).map((position) => (
+                    <option key={position} value={position}>Need: {position}</option>
+                  ))}
+                </select>
+                <select
+                  value={teamOfferPosition}
+                  onChange={(event) => setTeamOfferPosition(event.target.value as PlayerPosition)}
+                  className="rounded-lg border border-white/15 bg-[#090D12] px-3 py-2 text-xs text-white"
+                  aria-label="Position your team offers"
+                >
+                  {(['GK', 'DEF', 'MID', 'FWD'] as const).map((position) => (
+                    <option key={position} value={position}>Offer: {position}</option>
+                  ))}
+                </select>
+                <input
+                  value={teamListingNotes}
+                  onChange={(event) => setTeamListingNotes(event.target.value)}
+                  maxLength={300}
+                  placeholder="Notes (optional)"
+                  className="rounded-lg border border-white/15 bg-[#090D12] px-3 py-2 text-xs text-white"
+                />
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => handleTeamListing('list')}
+                  className="rounded-lg bg-amber-400 px-4 py-2 text-xs font-bold text-slate-950 disabled:opacity-50"
+                >
+                  Publish Team Need
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {feedback && (
           <div
             className={`rounded-lg border px-4 py-2.5 text-xs ${
@@ -620,6 +789,102 @@ export const TransferMarket: React.FC<TransferMarketProps> = ({
       </div>
 
       {/* TAB 1: MARKET BOARD */}
+      {marketTab === 'board' && (teamListings.length > 0 || rosterOpenings.length > 0) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {teamListings.map((team) => (
+            <div key={team.id} className="rounded-2xl border border-amber-400/25 bg-[#111821] p-5 space-y-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-amber-300">Team transfer need</div>
+              <h3 className="font-display text-lg font-bold text-white">{team.name}</h3>
+              <p className="text-sm text-slate-300">
+                Seeking <strong className="text-white">{team.teamMarketListing?.positionNeeded}</strong>
+                {' · '}offering <strong className="text-white">{team.teamMarketListing?.positionOffered}</strong>
+              </p>
+              {team.teamMarketListing?.availabilityNotes && (
+                <p className="text-xs text-slate-400">{team.teamMarketListing.availabilityNotes}</p>
+              )}
+              <div className="text-[11px] text-slate-500">
+                Captain: {team.captainName} · Listing is a recruitment post; player moves still require normal approvals.
+              </div>
+            </div>
+          ))}
+          {rosterOpenings.map((opening) => (
+            <div key={opening.id} className="rounded-2xl border border-emerald-500/25 bg-[#111821] p-5 space-y-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-300">Paid replacement opening</div>
+              <h3 className="font-display text-lg font-bold text-white">{opening.teamName}</h3>
+              <p className="text-sm text-slate-300">
+                {opening.position} · {opening.gender} · {opening.gamesRemaining} games remain
+              </p>
+              <p className="text-xs text-emerald-300">Standard solo entry fee: ${opening.fee}</p>
+              {replacementOpeningId === opening.id ? (
+                <form onSubmit={handleReplacementJoin} className="space-y-2 border-t border-white/10 pt-3">
+                  <input
+                    required
+                    value={replacementName}
+                    onChange={(event) => setReplacementName(event.target.value)}
+                    placeholder="Full name"
+                    className="w-full rounded-lg border border-white/15 bg-[#090D12] px-3 py-2 text-xs text-white"
+                  />
+                  <input
+                    required
+                    type="email"
+                    value={replacementEmail}
+                    onChange={(event) => setReplacementEmail(event.target.value)}
+                    placeholder="Email"
+                    className="w-full rounded-lg border border-white/15 bg-[#090D12] px-3 py-2 text-xs text-white"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      value={replacementPosition}
+                      onChange={(event) => setReplacementPosition(event.target.value as PlayerPosition)}
+                      className="rounded-lg border border-white/15 bg-[#090D12] px-2 py-2 text-xs text-white"
+                    >
+                      {(['GK', 'DEF', 'MID', 'FWD'] as const).map((position) => <option key={position}>{position}</option>)}
+                    </select>
+                    <select
+                      value={replacementGender}
+                      onChange={(event) => setReplacementGender(event.target.value as 'Male' | 'Female')}
+                      className="rounded-lg border border-white/15 bg-[#090D12] px-2 py-2 text-xs text-white"
+                    >
+                      <option>Male</option>
+                      <option>Female</option>
+                    </select>
+                  </div>
+                  <input
+                    required
+                    value={replacementWaiverName}
+                    onChange={(event) => setReplacementWaiverName(event.target.value)}
+                    placeholder="Type your name to sign the waiver"
+                    className="w-full rounded-lg border border-white/15 bg-[#090D12] px-3 py-2 text-xs text-white"
+                  />
+                  <p className="text-[10px] text-amber-200">
+                    Demo checkout records the standard fee; connect a payment provider before accepting real payments.
+                  </p>
+                  <div className="flex gap-2">
+                    <button type="submit" disabled={busy} className="flex-1 rounded-lg bg-emerald-500 px-3 py-2 text-xs font-bold text-slate-950">
+                      Join &amp; Record Fee
+                    </button>
+                    <button type="button" onClick={() => setReplacementOpeningId('')} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-slate-300">
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReplacementOpeningId(opening.id);
+                    setReplacementPosition(opening.position);
+                    setReplacementGender(opening.gender);
+                  }}
+                  className="w-full rounded-lg bg-emerald-500 px-3 py-2 text-xs font-bold text-slate-950"
+                >
+                  Apply &amp; Pay ${opening.fee}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
       {marketTab === 'board' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {listedPlayers.length === 0 ? (

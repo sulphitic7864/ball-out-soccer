@@ -143,7 +143,7 @@ export const TeamStudioPanel: React.FC<TeamStudioProps> = ({
 
     ctx.fillStyle = '#F59E0B';
     ctx.font = 'bold 28px sans-serif';
-    ctx.fillText(`${league.name} · ${league.city}`, 450, 210);
+    ctx.fillText(`${league.name} · ${[league.city, league.region, league.country].filter(Boolean).join(', ')}`, 450, 210);
 
     ctx.fillStyle = '#94A3B8';
     ctx.font = '24px sans-serif';
